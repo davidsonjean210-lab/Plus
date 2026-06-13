@@ -1,201 +1,861 @@
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Segoe UI', Roboto, sans-serif;
+let posts = [];
+let currentAvatarData = "🦊"; 
+let loadedMediaBase64 = ""; 
+let activeChatUser = null;
+let currentViewedUser = null; 
+
+// Cuentas de la Red Social (Ahora esperando usuarios reales)
+const MOCK_USERS = {};
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadProfile();
+    initSystemData();
+    loadPosts();
+    renderStoriesUI();
+    renderChatChannels();
+    updateProfileStats(); 
+    renderProfileFeed();  
+    document.getElementById('search-input').addEventListener('input', handleSearch);
+    
+    // Captura de archivos multimedia
+    document.getElementById('pulse-file-media').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if(file) {
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                loadedMediaBase64 = evt.target.result;
+                document.getElementById('media-file-status').textContent = `📁 Archivo Cargado (${file.type.split('/')[0]})`;
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+});
+
+function initSystemData() {
+
+    
 }
 
-body {
-    background-color: #0f172a;
-    color: #f8fafc;
-    padding-bottom: 80px;
+
+// DETECTAR EVENTOS DE PERFIL
+document.getElementById('profile-name').addEventListener('input', () => {
+    saveProfileData();
+    updateProfileStats();
+    renderProfileFeed(); 
+});
+document.getElementById('profile-avatar-select').addEventListener('change', function() {
+    saveProfileData(this.value);
+});
+document.getElementById('profile-photo-upload').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) { saveProfileData(e.target.result); };
+        reader.readAsDataURL(file);
+    }
+});
+
+function saveProfileData(newAvatarData = null) {
+    const name = document.getElementById('profile-name').value.trim() || "Usuario Plus";
+    if (newAvatarData) currentAvatarData = newAvatarData;
+    const profile = { name, avatar: currentAvatarData };
+    localStorage.setItem('plus_profile', JSON.stringify(profile));
+    updateAvatarUI(currentAvatarData);
 }
 
-.navbar {
-    background-color: #0f172a;
-    padding: 12px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    position: sticky;
-    top: 0;
-    z-index: 100;
+function updateAvatarUI(avatarData) {
+    const isImage = avatarData.startsWith('data:image') || avatarData.startsWith('http');
+    const contentHTML = isImage ? `<img src="${avatarData}" class="avatar-img">` : avatarData;
+    document.getElementById('story-my-avatar').innerHTML = contentHTML;
+    document.getElementById('nav-profile-icon').innerHTML = contentHTML;
+    
+    const bigAvatar = document.getElementById('profile-big-avatar');
+    if(bigAvatar && !currentViewedUser) bigAvatar.innerHTML = contentHTML;
 }
 
-.logo {
-    font-size: 24px;
-    font-weight: 800;
-    background: linear-gradient(135deg, #a855f7, #ec4899);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.logo span { color: #38bdf8; }
-
-.nav-top-icons { display: flex; gap: 18px; }
-.icon-btn { background: none; border: none; font-size: 24px; color: #f8fafc; cursor: pointer; display: flex; align-items: center; }
-
-.app-view { display: none; }
-.app-view.active-view { display: block; animation: fadeIn 0.2s ease-in-out; }
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(5px); }
-    to { opacity: 1; transform: translateY(0); }
+function loadProfile() {
+    const savedProfile = localStorage.getItem('plus_profile');
+    if (savedProfile) {
+        const profile = JSON.parse(savedProfile);
+        document.getElementById('profile-name').value = profile.name;
+        currentAvatarData = profile.avatar;
+        updateAvatarUI(currentAvatarData);
+        if(!currentAvatarData.startsWith('data:image')) {
+            const selectEl = document.getElementById('profile-avatar-select');
+            if(selectEl) selectEl.value = currentAvatarData;
+        }
+    }
 }
 
-.stories-container { display: flex; gap: 16px; padding: 10px 5px 15px 5px; overflow-x: auto; border-bottom: 1px solid #1e293b; background-color: #0f172a; margin-bottom: 15px; }
-.stories-container::-webkit-scrollbar { display: none; }
-.story-item { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: #94a3b8; min-width: 64px; cursor: pointer; }
-.story-circle { width: 58px; height: 58px; border-radius: 50%; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 26px; margin-bottom: 5px; overflow: hidden; }
-.ring-neon { border: 2.5px solid transparent; background-image: linear-gradient(#1e293b, #1e293b), linear-gradient(135deg, #a855f7, #ec4899); background-origin: border-box; background-clip: content-box, border-box; }
-.current-user-avatar { border: 2px solid #334155; }
+function switchTab(tabName, buttonElement) {
+    const tabs = document.querySelectorAll('.nav-tab');
+    tabs.forEach(tab => tab.classList.remove('active'));
+    if(buttonElement) buttonElement.classList.add('active');
 
-.app-container { max-width: 480px; margin: 0 auto; padding: 0 12px; }
-.pulse-card { background-color: #1e293b; border-radius: 12px; padding: 15px; margin-bottom: 15px; border: 1px solid #233148; }
-.view-title { font-size: 18px; font-weight: 700; margin-bottom: 15px; color: #f8fafc; }
-
-.search-box { display: flex; align-items: center; background-color: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 10px 15px; margin-bottom: 20px; }
-.search-icon { font-size: 20px; color: #64748b; margin-right: 10px; }
-.search-box input { background: none; border: none; color: white; width: 100%; outline: none; font-size: 15px; }
-.placeholder-text { text-align: center; color: #64748b; font-size: 14px; margin-top: 40px; }
-
-.create-box textarea { width: 100%; height: 120px; background: transparent; border: none; color: white; font-size: 15px; resize: none; outline: none; margin-bottom: 10px; }
-.image-input { width: 100%; background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px; margin-bottom: 15px; font-size: 13px; outline: none; }
-.create-actions { display: flex; justify-content: space-between; align-items: center; }
-.create-actions select { background: #0f172a; color: white; border: 1px solid #475569; padding: 8px; border-radius: 6px; outline: none; }
-#btn-pulse-publish { background: linear-gradient(135deg, #a855f7, #ec4899); color: white; border: none; padding: 8px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-
-.trends-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
-.trend-item { background: #1e293b; padding: 12px 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #233148; cursor: pointer; }
-.trend-info span { font-size: 11px; color: #64748b; text-transform: uppercase; }
-.trend-info h4 { font-size: 14px; color: #f8fafc; margin-top: 2px; }
-.trend-posts { font-size: 12px; color: #38bdf8; }
-
-.profile-header-ui { display: flex; align-items: center; gap: 25px; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 20px; }
-.profile-main-avatar { width: 76px; height: 76px; background: #0f172a; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 38px; border: 2px solid #a855f7; overflow: hidden; }
-.profile-stats { display: flex; flex: 1; justify-content: space-around; text-align: center; }
-.profile-stats strong { font-size: 18px; color: white; }
-.profile-stats p { font-size: 12px; color: #94a3b8; }
-.profile-box h3 { font-size: 13px; color: #94a3b8; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
-.profile-inputs { display: flex; flex-direction: column; gap: 12px; }
-.profile-inputs input, .profile-inputs select { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; border-radius: 8px; outline: none; }
-
-.upload-btn { background: #0f172a; border: 1px dashed #a855f7; color: #a855f7; padding: 10px; border-radius: 8px; text-align: center; font-size: 14px; cursor: pointer; transition: 0.2s; }
-.upload-btn:hover { background: #a855f722; }
-.avatar-img { width: 100%; height: 100%; object-fit: cover; }
-
-.vibe-idea { border-left: 4px solid #eab308; }
-.vibe-moment { border-left: 4px solid #ec4899; }
-.vibe-spark { border-left: 4px solid #38bdf8; }
-.card-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #94a3b8; margin-bottom: 10px; }
-.card-user-info { display: flex; align-items: center; gap: 8px; }
-.post-avatar { width: 32px; height: 32px; border-radius: 50%; background: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 18px; overflow: hidden; display:inline-flex; }
-.username { font-weight: bold; color: #f8fafc; display: flex; align-items: center; gap: 4px; }
-.badge { background: #0f172a; padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 5px; color: #cbd5e1; }
-.card-text { font-size: 14px; line-height: 1.4; color: #e2e8f0; margin-bottom: 12px; }
-
-.post-image, .post-video { width: 100%; max-height: 280px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; display: block; background: #000; }
-
-.card-footer { display: flex; gap: 10px; align-items: center; }
-.reaction-btn { background: #0f172a; border: 1px solid #334155; color: white; padding: 6px 12px; border-radius: 15px; display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
-.reaction-btn.active { background: #334155; border-color: #a855f7; }
-
-/* NUEVOS ESTILOS SIN ALTERAR EL ATUENDO INICIAL */
-.follow-btn { margin-left: auto; background: #38bdf8; color: #0f172a; border: none; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; }
-.follow-btn.following { background: #334155; color: white; border: 1px solid #475569; }
-
-/* CHAT INTEGRADO */
-.chat-channel-row { display: flex; align-items: center; gap: 15px; padding: 12px; background: #1e293b; border-radius: 10px; margin-bottom: 10px; border: 1px solid #233148; cursor: pointer; }
-.chat-box-header { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #334155; margin-bottom: 15px; }
-.chat-messages-area { height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 5px; margin-bottom: 15px; }
-.chat-messages-area::-webkit-scrollbar { width: 4px; }
-.chat-messages-area::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
-.msg-bubble { max-width: 75%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; word-break: break-word; }
-.msg-bubble.sent { background: linear-gradient(135deg, #a855f7, #ec4899); color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
-.msg-bubble.received { background: #0f172a; color: #e2e8f0; align-self: flex-start; border-bottom-left-radius: 2px; border: 1px solid #334155; }
-.chat-box-footer { display: flex; gap: 8px; }
-.chat-box-footer input { flex: 1; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: white; padding: 8px 12px; outline: none; font-size: 14px; }
-.chat-box-footer button { background: #38bdf8; border: none; color: #0f172a; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
-
-/* MODAL DE LLAMADAS Y STORIES */
-.story-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #000; z-index: 2000; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-.story-progress-bar { position: absolute; top: 15px; left: 10px; right: 10px; height: 3px; background: #334155; border-radius: 2px; overflow: hidden; }
-.story-progress-bar div { height: 100%; background: #38bdf8; width: 0%; transition: width 4s linear; }
-.close-story { position: absolute; top: 25px; right: 15px; background: none; border: none; font-size: 28px; color: white; cursor: pointer; }
-.story-modal-user { position: absolute; top: 25px; left: 15px; display: flex; align-items: center; gap: 8px; color: white; font-weight: bold; font-size: 14px; }
-.story-image-full { width: 100%; max-height: 80vh; object-fit: contain; }
-.call-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.98); z-index: 3000; display: flex; flex-direction: column; justify-content: space-around; align-items: center; }
-.call-info { text-align: center; }
-.call-avatar { width: 100px; height: 100px; border-radius: 50%; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 50px; margin: 0 auto 20px auto; border: 3px solid #ec4899; overflow: hidden; }
-.call-actions { display: flex; gap: 40px; }
-.call-btn { width: 60px; height: 60px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; font-size: 28px; color: white; cursor: pointer; }
-.call-btn.decline { background: #ef4444; box-shadow: 0 0 15px #ef444455; }
-.call-btn.accept { background: #22c55e; box-shadow: 0 0 15px #22c55e55; }
-
-.bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; height: 56px; background-color: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); border-top: 1px solid #1e293b; display: flex; justify-content: space-around; align-items: center; z-index: 1000; }
-.nav-tab { background: none; border: none; font-size: 26px; color: #64748b; cursor: pointer; padding: 8px; transition: all 0.2s; display: flex; align-items: center; justify-content: center; }
-.nav-tab.active { color: #f8fafc; transform: scale(1.1); }
-#nav-profile-icon { font-size: 16px; background-color: #1e293b; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 1.5px solid #64748b; overflow: hidden; }
-.nav-tab.active #nav-profile-icon { border-color: #ec4899; }/* =========================================
-   CUADRÍCULA DE PERFIL (TIPO INSTAGRAM)
-   ========================================= */
-.profile-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 2px; /* Margen diminuto entre fotos */
-    margin-top: 15px;
-    padding-bottom: 20px;
+    const views = document.querySelectorAll('.app-view');
+    views.forEach(view => view.classList.remove('active-view'));
+    
+    document.getElementById(`view-${tabName}`).classList.add('active-view');
+    
+    if (tabName === 'feed') window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (tabName === 'profile') {
+        if (buttonElement !== null) currentViewedUser = null;
+        updateProfileStats();
+        renderProfileFeed(); 
+    }
 }
 
-.profile-grid-item {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 1 / 1; /* Esto hace que sean cuadrados perfectos */
-    background-color: #1e293b;
-    overflow: hidden;
+function openUserProfile(username) {
+    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
+    if (username.toLowerCase() === myName.toLowerCase()) {
+        currentViewedUser = null; 
+    } else {
+        currentViewedUser = username; 
+    }
+    switchTab('profile', null);
 }
 
-.profile-grid-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover; /* Ajusta la imagen sin deformarla */
-    display: block;
+// NAVEGACIÓN Y ESTADÍSTICAS REALES
+function updateProfileStats() {
+    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
+    const targetUser = currentViewedUser || myName;
+    
+    // Contar publicaciones
+    const userPostsCount = posts.filter(post => post.name.toLowerCase() === targetUser.toLowerCase()).length;
+    const postsStat = document.getElementById('stat-posts-count');
+    if (postsStat) postsStat.textContent = userPostsCount;
+    
+    const followingStat = document.getElementById('stat-following-count');
+    const followersStat = document.getElementById('stat-followers-count');
+
+    // CONVERTIR LOS NÚMEROS EN BOTONES CLICKEABLES
+    [followersStat, followingStat].forEach(stat => {
+        if(stat && stat.parentElement) {
+            stat.parentElement.style.cursor = 'pointer';
+            stat.parentElement.title = "Ver lista de usuarios";
+            // Efecto sutil visual para indicar que es interactivo
+            stat.parentElement.onmouseenter = () => stat.parentElement.style.opacity = '0.7';
+            stat.parentElement.onmouseleave = () => stat.parentElement.style.opacity = '1';
+        }
+    });
+
+    if(followersStat && followersStat.parentElement) followersStat.parentElement.onclick = () => openConnectionsModal('followers');
+    if(followingStat && followingStat.parentElement) followingStat.parentElement.onclick = () => openConnectionsModal('following');
+
+    if (currentViewedUser) {
+        // Estadísticas de perfil ajeno (Simuladas en formato texto)
+        if (followingStat) followingStat.textContent = "120";
+        const mockInfo = MOCK_USERS[currentViewedUser];
+        if (followersStat) followersStat.textContent = mockInfo ? mockInfo.followers : "0";
+    } else {
+        // Mis propias estadísticas (Cantidades Reales Exactas)
+        const following = JSON.parse(localStorage.getItem('plus_following') || "[]");
+        const followers = JSON.parse(localStorage.getItem('plus_followers') || "[]");
+        
+        if (followingStat) followingStat.textContent = following.length;
+        if (followersStat) followersStat.textContent = followers.length;
+    }
+    
+    // CONTROL DE INTERFAZ
+    const nameInput = document.getElementById('profile-name');
+    const avatarSelect = document.getElementById('profile-avatar-select');
+    let dynamicHeader = document.getElementById('profile-dynamic-view-header');
+    
+    if (!dynamicHeader && nameInput) {
+        dynamicHeader = document.createElement('div');
+        dynamicHeader.id = 'profile-dynamic-view-header';
+        nameInput.parentNode.insertBefore(dynamicHeader, nameInput);
+    }
+    
+    if (nameInput) {
+        if (currentViewedUser) {
+            nameInput.style.display = 'none';
+            if (avatarSelect) avatarSelect.style.display = 'none';
+            
+            let siblings = nameInput.parentNode.children;
+            for (let el of siblings) {
+                if (el.id !== 'profile-dynamic-view-header' && el.id !== 'profile-big-avatar' && el.id !== 'profile-posts-feed' && !el.contains(nameInput) && !el.innerText?.includes('Pulses') && !el.innerText?.includes('Seguidores')) {
+                    if (el.tagName !== 'STYLE' && !el.classList.contains('profile-grid')) {
+                        el.style.display = 'none';
+                    }
+                }
+            }
+            
+            const mockInfo = MOCK_USERS[currentViewedUser];
+            const isVerified = mockInfo?.verified || false;
+            const followingList = JSON.parse(localStorage.getItem('plus_following') || "[]");
+            const isSiguiendo = followingList.includes(currentViewedUser);
+            
+            dynamicHeader.innerHTML = `
+                <div style="text-align: center; margin-top: 15px; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
+                    <h2 style="color: white; font-size: 20px; margin: 0 0 5px 0; display: flex; align-items: center; justify-content: center; gap: 5px;">
+                        ${currentViewedUser} ${isVerified ? "<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>":""}
+                    </h2>
+                    <button class="follow-btn ${isSiguiendo ? 'following' : ''}" style="width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="toggleFollowFromProfile('${currentViewedUser}', this)">
+                        ${isSiguiendo ? 'Siguiendo' : 'Seguir'}
+                    </button>
+                </div>
+                <h3 style="color: #a855f7; font-size: 14px; margin: 20px 0 10px 0; text-transform: uppercase;">
+                    📝 Publicaciones de ${currentViewedUser}
+                </h3>
+            `;
+            dynamicHeader.style.display = 'block';
+            
+            const targetAvatar = mockInfo ? mockInfo.avatar : "👤";
+            const isImg = targetAvatar.startsWith('data:image') || targetAvatar.startsWith('http');
+            document.getElementById('profile-big-avatar').innerHTML = isImg ? `<img src="${targetAvatar}" class="avatar-img">` : targetAvatar;
+            
+        } else {
+            nameInput.style.display = 'block';
+            if (avatarSelect) avatarSelect.style.display = 'block';
+            
+            let siblings = nameInput.parentNode.children;
+            for (let el of siblings) {
+                if (el.id !== 'profile-dynamic-view-header' && el.id !== 'post-detail-modal' && el.id !== 'connections-modal') {
+                    el.style.display = '';
+                }
+            }
+            if (dynamicHeader) dynamicHeader.style.display = 'none';
+            
+            updateAvatarUI(currentAvatarData);
+        }
+    }
 }
 
-.profile-grid-text {
-    padding: 8px;
-    font-size: 11px;
-    color: #94a3b8;
-    text-align: center;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    word-break: break-word;
-    background: #0f172a;
+// ==========================================
+// VENTANA FLOTANTE DE SEGUIDORES / SIGUIENDO
+// ==========================================
+function openConnectionsModal(type) {
+    let modal = document.getElementById('connections-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'connections-modal';
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95); display: flex; align-items: center;
+            justify-content: center; z-index: 10000; padding: 20px; backdrop-filter: blur(8px);
+        `;
+        document.body.appendChild(modal);
+    }
+
+    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
+    const targetUser = currentViewedUser || myName;
+    
+    let usersList = [];
+    if (targetUser === myName) {
+        // Tus listas reales y exactas
+        usersList = type === 'followers' 
+            ? JSON.parse(localStorage.getItem('plus_followers') || "[]")
+            : JSON.parse(localStorage.getItem('plus_following') || "[]");
+    } else {
+        // Listas simuladas si miras el perfil de otro
+        if (type === 'followers') {
+            usersList = ["Pixel", "Cris", "Shadow"].filter(u => u !== targetUser);
+            if (JSON.parse(localStorage.getItem('plus_following') || "[]").includes(targetUser)) usersList.push(myName);
+        } else {
+            usersList = ["Astron", "Pixel"].filter(u => u !== targetUser);
+        }
+    }
+
+    let listHTML = "";
+    if (usersList.length === 0) {
+        listHTML = `<p style="text-align:center; color:#64748b; margin-top:20px; font-size:14px;">Aún no hay usuarios aquí.</p>`;
+    } else {
+        usersList.forEach(username => {
+            let avatar = "👤";
+            let isVerified = false;
+            
+            if (username === myName) {
+                avatar = currentAvatarData;
+            } else if (MOCK_USERS[username]) {
+                avatar = MOCK_USERS[username].avatar;
+                isVerified = MOCK_USERS[username].verified;
+            }
+
+            const isAvatarImg = avatar.startsWith('data:image') || avatar.startsWith('http');
+            const avatarHTML = isAvatarImg ? `<img src="${avatar}" class="avatar-img" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : `<div style="font-size:24px; text-align:center; line-height:40px;">${avatar}</div>`;
+            const badge = isVerified ? `<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>` : "";
+
+            listHTML += `
+                <div style="display:flex; align-items:center; gap:15px; padding:12px; border-bottom:1px solid #334155; cursor:pointer; transition: background 0.3s;" 
+                     onmouseenter="this.style.background='#1e293b'" onmouseleave="this.style.background='transparent'"
+                     onclick="closeConnectionsModal(); openUserProfile('${username}')">
+                    <div style="width:45px; height:45px; background:#1e293b; border-radius:50%; border:2px solid #38bdf8; display:flex; align-items:center; justify-content:center; overflow:hidden;">
+                        ${avatarHTML}
+                    </div>
+                    <div style="color:white; font-weight:bold; font-size:16px;">
+                        ${username} ${badge}
+                    </div>
+                    <i class='bx bx-chevron-right' style="color:#64748b; margin-left:auto; font-size:24px;"></i>
+                </div>
+            `;
+        });
+    }
+
+    const title = type === 'followers' ? '👥 Seguidores' : '✨ Siguiendo';
+
+    modal.innerHTML = `
+        <div style="position: relative; width: 100%; max-width: 400px; background:#0f172a; border-radius:16px; border:1px solid #334155; max-height:75vh; display:flex; flex-direction:column; box-shadow: 0 10px 25px rgba(0,0,0,0.8);">
+            <div style="padding:18px 20px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; background:#1e293b; border-radius:16px 16px 0 0;">
+                <h3 style="color:white; margin:0; font-size:18px;">${title}</h3>
+                <button onclick="closeConnectionsModal()" style="background:none; border:none; color:#94a3b8; font-size:28px; cursor:pointer;"><i class='bx bx-x'></i></button>
+            </div>
+            <div style="padding:5px; overflow-y:auto; flex:1;">
+                ${listHTML}
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
 }
 
-.grid-top-icon {
-    position: absolute;
-    top: 5px;
-    right: 5px;
-    color: white;
-    font-size: 16px;
-    filter: drop-shadow(0px 0px 3px rgba(0,0,0,0.8));
+function closeConnectionsModal() {
+    const modal = document.getElementById('connections-modal');
+    if (modal) modal.style.display = 'none';
 }
 
-.grid-delete-btn {
-    position: absolute;
-    bottom: 5px;
-    right: 5px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #ef4444;
-    border: none;
-    border-radius: 50%;
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    backdrop-filter: blur(4px);
+function toggleFollowFromProfile(username, btn) {
+    toggleFollow(username, btn);
+    updateProfileStats();
+}
+
+function renderProfileFeed() {
+    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim().toLowerCase();
+    const targetUser = currentViewedUser ? currentViewedUser.toLowerCase() : myName;
+    
+    const myPosts = posts.filter(post => post.name.toLowerCase() === targetUser);
+    const container = document.getElementById('profile-posts-feed');
+    if (!container) return;
+    container.innerHTML = ""; 
+
+    if (myPosts.length === 0) {
+        container.innerHTML = `<p class="placeholder-text" style="text-align:center; padding: 20px; color:#64748b; font-size:14px;">No hay publicaciones aún.</p>`;
+        return;
+    }
+
+    const grid = document.createElement('div');
+    grid.classList.add('profile-grid');
+
+    myPosts.forEach(post => {
+        const item = document.createElement('div');
+        item.classList.add('profile-grid-item');
+
+        let innerContent = "";
+        let topIcon = "";
+
+        if (post.image) {
+            const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
+            if (isVideo) {
+                innerContent = `<video src="${post.image}" class="profile-grid-img"></video>`;
+                topIcon = `<i class='bx bx-play-circle grid-top-icon'></i>`;
+            } else {
+                innerContent = `<img src="${post.image}" class="profile-grid-img">`;
+            }
+        } else {
+            innerContent = `<div class="profile-grid-text">${post.text.substring(0, 60)}...</div>`;
+            topIcon = `<i class='bx bx-text grid-top-icon'></i>`;
+        }
+
+        const deleteBtnHTML = !currentViewedUser ? `
+            <button class="grid-delete-btn" onclick="event.stopPropagation(); deletePulse(${post.id})">
+                <i class='bx bx-trash'></i>
+            </button>
+        ` : '';
+
+        item.innerHTML = `
+            <div style="width:100%; height:100%; cursor:pointer;" onclick="openFullPostModal(${post.id})">
+                ${innerContent}
+                ${topIcon}
+            </div>
+            ${deleteBtnHTML}
+        `;
+        grid.appendChild(item);
+    });
+
+    container.appendChild(grid);
+}
+
+function openFullPostModal(postId) {
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+
+    let modal = document.getElementById('post-detail-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'post-detail-modal';
+        modal.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95); display: flex; align-items: center;
+            justify-content: center; z-index: 9999; padding: 20px; backdrop-filter: blur(8px);
+        `;
+        document.body.appendChild(modal);
+    }
+
+    let mediaHTML = "";
+    if (post.image) {
+        const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
+        if (isVideo) {
+            mediaHTML = `<video src="${post.image}" class="post-video" controls autoplay style="max-height:45vh; width:100%; object-fit:contain; border-radius:8px;"></video>`;
+        } else {
+            mediaHTML = `<img src="${post.image}" class="post-image" style="max-height:50vh; width:100%; object-fit:contain; border-radius:8px;">`;
+        }
+    }
+
+    const isAvatarImg = post.avatar && (post.avatar.startsWith('data:image') || post.avatar.startsWith('http'));
+    const avatarHTML = isAvatarImg ? `<img src="${post.avatar}" class="avatar-img">` : post.avatar;
+    const isVerified = MOCK_USERS[post.name]?.verified || post.name === "Mundo Deportes" || post.name === "AstroNews";
+    const verifiedBadge = isVerified ? `<i class='bx bxs-badge-check' style='color: #38bdf8; font-size:14px;'></i>` : '';
+
+    modal.innerHTML = `
+        <div style="position: relative; width: 100%; max-width: 480px; background:#0f172a; border-radius:12px;">
+            <button onclick="closeFullPostModal()" style="position: absolute; top: -45px; right: 0; background: none; border: none; color: #94a3b8; font-size: 32px; cursor: pointer;"><i class='bx bx-x'></i></button>
+            
+            <div class="pulse-card ${post.vibe}" style="margin:0; border:1px solid #334155;">
+                <div class="card-header">
+                    <div class="card-user-info" style="cursor:pointer;" onclick="closeFullPostModal(); openUserProfile('${post.name}')">
+                        <span class="post-avatar">${avatarHTML}</span>
+                        <div>
+                            <span class="username">${post.name} ${verifiedBadge}</span>
+                            <span class="badge">${post.vibeText}</span>
+                        </div>
+                    </div>
+                    <span class="time">${post.time}</span>
+                </div>
+                <p class="card-text" style="white-space: pre-wrap;">${post.text}</p>
+                ${mediaHTML}
+                <div class="card-footer">
+                    <button class="reaction-btn ${post.userReactedFire ? 'active' : ''}" onclick="toggleReactionInModal(${post.id}, 'fire')">🔥 <span class="count">${post.reactions.fire}</span></button>
+                    <button class="reaction-btn ${post.userReactedHeart ? 'active' : ''}" onclick="toggleReactionInModal(${post.id}, 'heart')">💜 <span class="count">${post.reactions.heart}</span></button>
+                </div>
+            </div>
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+
+function closeFullPostModal() {
+    const modal = document.getElementById('post-detail-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function toggleReactionInModal(postId, type) {
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    if (type === 'fire') {
+        if (post.userReactedFire) { post.reactions.fire--; post.userReactedFire = false; }
+        else { post.reactions.fire++; post.userReactedFire = true; }
+    } else if (type === 'heart') {
+        if (post.userReactedHeart) { post.reactions.heart--; post.userReactedHeart = false; }
+        else { post.reactions.heart++; post.userReactedHeart = true; }
+    }
+    localStorage.setItem('plus_posts', JSON.stringify(posts));
+    renderFeed(posts, 'pulse-feed');
+    renderProfileFeed(); 
+    openFullPostModal(postId); 
+}
+
+function toggleFollow(username, btn) {
+    let following = JSON.parse(localStorage.getItem('plus_following') || "[]");
+    if(following.includes(username)){
+        following = following.filter(u => u !== username);
+        btn.textContent = "Seguir";
+        btn.classList.remove('following');
+    } else {
+        following.push(username);
+        btn.textContent = "Siguiendo";
+        btn.classList.add('following');
+    }
+    localStorage.setItem('plus_following', JSON.stringify(following));
+    updateProfileStats();
+    
+    // Si estás viendo la lista de "Siguiendo" abierta, repíntala para actualizar en vivo
+    if (document.getElementById('connections-modal') && document.getElementById('connections-modal').style.display === 'flex') {
+        // En este caso simple, no forzamos repintado para no cerrar y abrir el modal feo.
+    }
+}
+// MOTOR DEL FEED
+function loadPosts() {
+    // Si Firebase está conectado, leemos de la nube
+    if (window.db && window.cloud) {
+        try {
+            const q = window.cloud.query(window.cloud.collection(window.db, "posts"), window.cloud.orderBy("timestamp", "desc"));
+            window.cloud.onSnapshot(q, (snapshot) => {
+                posts = [];
+                snapshot.forEach((doc) => {
+                    posts.push({ id: doc.id, ...doc.data() });
+                });
+                renderFeed(posts, 'pulse-feed');
+            });
+            return; 
+        } catch (e) {
+            console.log("Usando modo local.");
+        }
+    }
+
+    // MODO LOCAL
+    const savedPosts = localStorage.getItem('plus_posts');
+    if (savedPosts) {
+        posts = JSON.parse(savedPosts);
+    } else {
+        posts = [
+            {
+                id: 3, name: "Mundo Deportes", avatar: "⚽", vibe: "vibe-moment", vibeText: "📸 Momento", time: "Hace 5m",
+                text: "¡Arrancó oficialmente el torneo! El ambiente es una locura absoluta en el estadio. #WorldCup2026",
+                image: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500",
+                reactions: { fire: 124, heart: 98 }
+            }
+        ];
+        localStorage.setItem('plus_posts', JSON.stringify(posts));
+    }
+    renderFeed(posts, 'pulse-feed');
+}
+
+function renderFeed(postsArray, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = ""; 
+
+    if (postsArray.length === 0) {
+        container.innerHTML = `<p class="placeholder-text" style="text-align:center; padding: 20px; color:#64748b; font-size:14px;">No hay publicaciones aquí todavía.</p>`;
+        return;
+    }
+
+    const following = JSON.parse(localStorage.getItem('plus_following') || "[]");
+    const currentName = document.getElementById('profile-name').value.trim().toLowerCase();
+
+    postsArray.forEach(post => {
+        const card = document.createElement('div');
+        card.classList.add('pulse-card', post.vibe);
+
+        let mediaHTML = "";
+        if (post.image) {
+            const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
+            if (isVideo) {
+                mediaHTML = `<video src="${post.image}" class="post-video" controls></video>`;
+            } else {
+                mediaHTML = `<img src="${post.image}" class="post-image" onerror="this.style.display='none'">`;
+            }
+        }
+
+        const isAvatarImg = post.avatar && (post.avatar.startsWith('data:image') || post.avatar.startsWith('http'));
+        const avatarHTML = isAvatarImg ? `<img src="${post.avatar}" class="avatar-img">` : post.avatar;
+
+        const isVerified = MOCK_USERS[post.name]?.verified || post.name === "Mundo Deportes" || post.name === "AstroNews";
+        const verifiedBadge = isVerified ? `<i class='bx bxs-badge-check' style='color: #38bdf8; font-size:14px;'></i>` : '';
+
+        let followBtnHTML = "";
+        if(post.name.toLowerCase() !== currentName && MOCK_USERS[post.name]) {
+            const isSiguiendo = following.includes(post.name);
+// Cambiamos 'post.name' por 'post.userId' (o como se llame el campo del ID en tus datos)
+// También cambiamos la función a 'followUser'
+followBtnHTML = `<button class="follow-btn" data-userid="${post.userId}" onclick="followUser(this)">${isSiguiendo ? 'Siguiendo' : 'Seguir'}</button>`;
+        }
+
+        card.innerHTML = `
+            <div class="card-header">
+                <div class="card-user-info" style="cursor:pointer;" onclick="openUserProfile('${post.name}')">
+                    <span class="post-avatar">${avatarHTML}</span>
+                    <div>
+                        <span class="username">${post.name} ${verifiedBadge}</span>
+                        <span class="badge">${post.vibeText}</span>
+                    </div>
+                </div>
+                ${followBtnHTML}
+                <span class="time">${post.time}</span>
+            </div>
+            <p class="card-text">${post.text}</p>
+            ${mediaHTML}
+            <div class="card-footer">
+                <button class="reaction-btn ${post.userReactedFire ? 'active' : ''}" onclick="toggleReaction(${post.id}, 'fire', '${containerId}')">🔥 <span class="count">${post.reactions.fire}</span></button>
+                <button class="reaction-btn ${post.userReactedHeart ? 'active' : ''}" onclick="toggleReaction(${post.id}, 'heart', '${containerId}')">💜 <span class="count">${post.reactions.heart}</span></button>
+                ${post.name.toLowerCase() === currentName ? `<button class="icon-btn" style="margin-left:auto; color:#ef4444; font-size:18px;" onclick="event.stopPropagation(); deletePulse(${post.id})"><i class='bx bx-trash'></i></button>` : ''}
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function deletePulse(id) {
+    posts = posts.filter(p => p.id !== id);
+    localStorage.setItem('plus_posts', JSON.stringify(posts));
+    renderFeed(posts, 'pulse-feed');
+    renderProfileFeed(); 
+    updateProfileStats();
+}
+
+// LANZAR PUBLICACIÓN 
+document.getElementById('btn-pulse-publish').addEventListener('click', async function() {
+    const text = document.getElementById('pulse-input').value.trim();
+    let image = document.getElementById('pulse-image').value.trim();
+    if(typeof loadedMediaBase64 !== 'undefined' && loadedMediaBase64) image = loadedMediaBase64;
+
+    if (text === "" && image === "") {
+        alert("¡No puedes lanzar un pulso vacío!");
+        return;
+    }
+
+    const vibeSelect = document.getElementById('pulse-vibe');
+    const currentName = document.getElementById('profile-name').value.trim() || "Usuario Plus";
+
+    const newPost = {
+        name: currentName, 
+        avatar: typeof currentAvatarData !== 'undefined' ? currentAvatarData : "🦊",
+        vibe: vibeSelect.value, 
+        vibeText: vibeSelect.options[vibeSelect.selectedIndex].text,
+        time: "Ahora mismo", 
+        text: text, 
+        image: image,
+        reactions: { fire: 0, heart: 0 },
+        timestamp: Date.now()
+    };
+
+    // INTENTAR GUARDAR EN FIREBASE
+    if (window.db && window.cloud) {
+        try {
+            await window.cloud.addDoc(window.cloud.collection(window.db, "posts"), newPost);
+            limpiarFormulario();
+            return; 
+        } catch (e) {
+            console.log("Guardando localmente.");
+        }
+    }
+
+    // RESPALDO LOCAL
+    newPost.id = Date.now();
+    posts.unshift(newPost);
+    localStorage.setItem('plus_posts', JSON.stringify(posts));
+    
+    limpiarFormulario();
+    renderFeed(posts, 'pulse-feed');
+    if(typeof updateProfileStats === 'function') updateProfileStats();
+    if(typeof renderProfileFeed === 'function') renderProfileFeed();
+    switchTab('feed', null); 
+});
+
+// GESTIÓN DE HISTORIAS DE USUARIOS
+function triggerStoryUpload() {
+    document.getElementById('story-file-upload').click();
+}
+document.getElementById('story-file-upload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if(file) {
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
+            const currentName = document.getElementById('profile-name').value.trim() || "Usuario Plus";
+            stories.unshift({ name: currentName, avatar: currentAvatarData, media: evt.target.result });
+            localStorage.setItem('plus_stories', JSON.stringify(stories));
+            renderStoriesUI();
+            alert("¡Historia subida con éxito a tu pulso!");
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+function renderStoriesUI() {
+    const container = document.getElementById('friends-stories');
+    if(!container) return;
+    container.innerHTML = "";
+    const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
+    
+    stories.forEach((st, index) => {
+        const item = document.createElement('div');
+        item.classList.add('story-item');
+        item.onclick = () => openStoryViewer(index);
+        const isImg = st.avatar.startsWith('data:image') || st.avatar.startsWith('http');
+        const avHTML = isImg ? `<img src="${st.avatar}" class="avatar-img">` : st.avatar;
+        
+        item.innerHTML = `<div class="story-circle ring-neon">${avHTML}</div><span>${st.name}</span>`;
+        container.appendChild(item);
+    });
+}
+
+let storyTimer = null;
+function openStoryViewer(index) {
+    const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
+    const story = stories[index];
+    if(!story) return;
+
+    document.getElementById('story-modal-username').textContent = story.name;
+    document.getElementById('story-modal-avatar').innerHTML = story.avatar.startsWith('data:image') ? `<img src="${story.avatar}" class="avatar-img">` : story.avatar;
+    document.getElementById('story-modal-content').innerHTML = `<img src="${story.media}" class="story-image-full">`;
+    
+    document.getElementById('story-modal').style.display = 'flex';
+    const progress = document.getElementById('story-progress');
+    progress.style.width = '0%';
+    setTimeout(() => progress.style.width = '100%', 50);
+
+    storyTimer = setTimeout(() => closeStory(), 4050);
+}
+function closeStory() {
+    clearTimeout(storyTimer);
+    document.getElementById('story-modal').style.display = 'none';
+}
+
+// BANDEJA DE ENTRADA Y CHAT EN VIVO ENCRIPTADO
+function renderChatChannels() {
+    const list = document.getElementById('chat-channels-list');
+    if(!list) return;
+    list.innerHTML = "";
+    
+    Object.keys(MOCK_USERS).forEach(user => {
+        const row = document.createElement('div');
+        row.classList.add('chat-channel-row');
+        row.onclick = () => openChatWith(user);
+        
+        row.innerHTML = `
+            <div class="post-avatar">${MOCK_USERS[user].avatar}</div>
+            <div>
+                <strong>${user} ${MOCK_USERS[user].verified ? "<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>":""}</strong>
+                <p style="font-size:12px; color:#64748b;">Pulsa para abrir chat encriptado...</p>
+            </div>
+        `;
+        list.appendChild(row);
+    });
+}
+
+function openChatWith(username) {
+    activeChatUser = username;
+    document.getElementById('chat-channels-list').style.display = 'none';
+    document.getElementById('active-chat-box').style.display = 'block';
+    document.getElementById('chat-target-name').textContent = username;
+    document.getElementById('chat-target-avatar').textContent = MOCK_USERS[username].avatar;
+    renderMessages();
+}
+
+function closeActiveChat() {
+    document.getElementById('chat-channels-list').style.display = 'block';
+    document.getElementById('active-chat-box').style.display = 'none';
+    activeChatUser = null;
+}
+
+function renderMessages() {
+    const area = document.getElementById('chat-messages-display');
+    area.innerHTML = "";
+    if(!activeChatUser) return;
+    
+    const chats = JSON.parse(localStorage.getItem('plus_chats') || "{}");
+    const userMsgs = chats[activeChatUser] || [];
+    
+    userMsgs.forEach(m => {
+        const bub = document.createElement('div');
+        bub.classList.add('msg-bubble', m.sender === "me" ? 'sent' : 'received');
+        bub.textContent = m.text;
+        area.appendChild(bub);
+    });
+    area.scrollTop = area.scrollHeight;
+}
+
+function sendDirectMessage() {
+    const inp = document.getElementById('chat-msg-input');
+    const txt = inp.value.trim();
+    if(!txt || !activeChatUser) return;
+    
+    const chats = JSON.parse(localStorage.getItem('plus_chats') || "{}");
+    if(!chats[activeChatUser]) chats[activeChatUser] = [];
+    
+    chats[activeChatUser].push({ sender: "me", text: txt });
+    localStorage.setItem('plus_chats', JSON.stringify(chats));
+    inp.value = "";
+    renderMessages();
+    
+    setTimeout(() => {
+        chats[activeChatUser].push({ sender: activeChatUser, text: "Recibido encriptado en nodo central de Plus. 🔥" });
+        localStorage.setItem('plus_chats', JSON.stringify(chats));
+        renderMessages();
+    }, 1500);
+}
+
+let callTimeout = null;
+function startCall(isVideo) {
+    if(!activeChatUser) return;
+    document.getElementById('call-screen-name').textContent = activeChatUser;
+    document.getElementById('call-screen-avatar').textContent = MOCK_USERS[activeChatUser].avatar;
+    document.getElementById('call-status').textContent = isVideo ? "Iniciando Videollamada..." : "Llamando por canal seguro...";
+    document.getElementById('btn-accept-call').style.display = 'none';
+    document.getElementById('call-overlay').style.display = 'flex';
+    
+    callTimeout = setTimeout(() => {
+        document.getElementById('call-status').textContent = "Conectado // Audio HD";
+    }, 2500);
+}
+
+function endCall() {
+    clearTimeout(callTimeout);
+    document.getElementById('call-overlay').style.display = 'none';
+}
+
+function clearSystemCache() {
+    if(confirm("¿Estás seguro de reiniciar la App Plus? Se borrarán tus publicaciones locales.")) {
+        localStorage.clear();
+        window.location.reload();
+    }
+}
+
+// BÚSQUEDA INTEGRADA
+function handleSearch() {
+    const query = document.getElementById('search-input').value.toLowerCase().trim();
+    const resultsContainer = document.getElementById('search-results');
+    if (query === "") {
+        resultsContainer.innerHTML = `<p class="placeholder-text">Empieza a escribir para filtrar publicaciones o usuarios...</p>`;
+        return;
+    }
+    const filtered = posts.filter(post => post.name.toLowerCase().includes(query) || post.text.toLowerCase().includes(query));
+    renderFeed(filtered, 'search-results');
+}
+
+function filterByHashtag(hashtag) {
+    switchTab('trends');
+    const filtered = posts.filter(post => post.text.toLowerCase().includes(hashtag.toLowerCase()));
+    const targetContainer = document.getElementById('trends-filtered-feed');
+    targetContainer.innerHTML = `<h4 style="font-size:13px; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase;">Pulses relacionados:</h4>`;
+    const innerFeedDiv = document.createElement('div');
+    innerFeedDiv.id = "inner-trend-feed";
+    targetContainer.appendChild(innerFeedDiv);
+    renderFeed(filtered, 'inner-trend-feed');
+}
+
+function toggleReaction(postId, type, currentContainerId) {
+    const post = posts.find(p => p.id === postId);
+    if (!post) return;
+    if (type === 'fire') {
+        if (post.userReactedFire) { post.reactions.fire--; post.userReactedFire = false; }
+        else { post.reactions.fire++; post.userReactedFire = true; }
+    } else if (type === 'heart') {
+        if (post.userReactedHeart) { post.reactions.heart--; post.userReactedHeart = false; }
+        else { post.reactions.heart++; post.userReactedHeart = true; }
+    }
+    localStorage.setItem('plus_posts', JSON.stringify(posts));
+    renderFeed(posts, 'pulse-feed');
+    renderProfileFeed(); 
+    if (currentContainerId === 'search-results') handleSearch();
+}
+function limpiarFormulario() {
+  // Usamos 'pulse-input' porque es el ID que tiene tu textarea en el HTML
+  const input = document.getElementById('pulse-input');
+  if (input) {
+    input.value = "";
+  }
+}
+async function followUser(botonPresionado) {
+    const targetUserId = botonPresionado.getAttribute("data-userid");
+    const { doc, updateDoc, arrayUnion, increment, getDoc, setDoc } = window.cloud;
+    const auth = getAuth();
+
+    if (!auth.currentUser) return alert("Inicia sesión primero");
+
+    const myRef = doc(window.db, "users", auth.currentUser.uid);
+    const targetRef = doc(window.db, "users", targetUserId);
+
+    // 1. Intentamos actualizar el contador
+    try {
+        await updateDoc(targetRef, { followersCount: increment(1) });
+    } catch (e) {
+        // 2. Si el contador no existe, lo creamos empezando en 1
+        await setDoc(targetRef, { followersCount: 1 }, { merge: true });
+    }
+
+    // 3. Guardamos quién sigue a quién
+    await updateDoc(myRef, { following: arrayUnion(targetUserId) });
+   
+    alert("¡Seguimiento exitoso!");
 }
