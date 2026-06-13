@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plus // Social Network</title>
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+    <header class="navbar">
+        <div class="logo">plus<span>.</span></div>
+        <div class="nav-top-icons">
+            <button class="icon-btn" onclick="switchTab('notifications')"><i class='bx bx-heart'></i></button>
+            <button class="icon-btn" onclick="switchTab('chat')"><i class='bx bx-message-rounded-dots'></i></button>
+        </div>
+    </header>
+
+    <div id="story-modal" class="story-overlay" style="display: none;">
+        <div class="story-progress-bar"><div id="story-progress"></div></div>
+        <button class="close-story" onclick="closeStory()"><i class='bx bx-x'></i></button>
+        <div class="story-modal-user">
+            <span id="story-modal-avatar">🦊</span>
+            <span id="story-modal-username">Usuario</span>
+        </div>
+        <div id="story-modal-content"></div>
+    </div>
+
+    <div id="call-overlay" class="call-overlay" style="display: none;">
+        <div class="call-info">
+            <div class="call-avatar" id="call-screen-avatar">🚀</div>
+            <h2 id="call-screen-name">Astron</h2>
+            <p id="call-status">Llamando...</p>
+        </div>
+        <div class="call-actions">
+            <button class="call-btn decline" onclick="endCall()"><i class='bx bx-phone-off'></i></button>
+            <button class="call-btn accept" id="btn-accept-call" style="display:none;"><i class='bx bx-phone'></i></button>
+        </div>
+    </div>
+
+    <main class="app-container">
+
+        <section id="view-feed" class="app-view active-view">
+            <div class="stories-container">
+                <div class="story-item" onclick="triggerStoryUpload()">
+                    <div class="story-circle current-user-avatar" id="story-my-avatar">🦊</div>
+                    <span>Tu pulso</span>
+                    <input type="file" id="story-file-upload" accept="image/*" style="display:none;">
+                </div>
+                <div id="friends-stories" style="display: flex; gap: 16px;">
+                    </div>
+            </div>
+            <div id="pulse-feed"></div>
+        </section>
+
+        <section id="view-search" class="app-view">
+            <div class="search-box">
+                <i class='bx bx-search search-icon'></i>
+                <input type="text" id="search-input" placeholder="Buscar usuarios, temas o hashtags...">
+            </div>
+            <div id="search-results">
+                <p class="placeholder-text">Empieza a escribir para filtrar...</p>
+            </div>
+        </section>
+
+        <section id="view-create" class="app-view">
+            <div class="pulse-card create-box">
+                <h3 class="view-title">✨ Crear Publicación</h3>
+                <textarea id="pulse-input" placeholder="¿Qué está pasando en el mundo? Usa hashtags..."></textarea>
+                
+                <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:15px;">
+                    <input type="text" id="pulse-image" class="image-input" placeholder="🔗 Pega link de imagen o video MP4 directo">
+                    <label for="pulse-file-media" class="upload-btn"><i class='bx bx-paperclip'></i> Subir Foto o Video desde el móvil</label>
+                    <input type="file" id="pulse-file-media" accept="image/*,video/*" style="display:none;">
+                    <span id="media-file-status" style="font-size:12px; color:#38bdf8; text-align:center;"></span>
+                </div>
+                
+                <div class="create-actions">
+                    <select id="pulse-vibe">
+                        <option value="vibe-spark">⚡ Spark</option>
+                        <option value="vibe-idea">💡 Idea</option>
+                        <option value="vibe-moment">📸 Momento</option>
+                    </select>
+                    <button id="btn-pulse-publish">Lanzar</button>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-trends" class="app-view">
+            <h3 class="view-title">🌍 Tendencias Mundiales</h3>
+            <div class="trends-list">
+                <div class="trend-item" onclick="filterByHashtag('#WorldCup2026')">
+                    <div class="trend-info"><span>1 · Deportes · EN VIVO</span><h4>#WorldCup2026 ⚽</h4></div>
+                    <span class="trend-posts">2.4M pulses</span>
+                </div>
+                <div class="trend-item" onclick="filterByHashtag('#ArtemisIII')">
+                    <div class="trend-info"><span>2 · Ciencia · Tendencia global</span><h4>#ArtemisIII 🚀</h4></div>
+                    <span class="trend-posts">840k pulses</span>
+                </div>
+            </div>
+            <div id="trends-filtered-feed"></div>
+        </section>
+
+        <section id="view-chat" class="app-view">
+            <h3 class="view-title">💬 Mensajes Privados</h3>
+            <div id="chat-channels-list"></div>
+            
+            <div id="active-chat-box" class="pulse-card" style="display:none; margin-top:15px;">
+                <div class="chat-box-header">
+                    <button onclick="closeActiveChat()" class="icon-btn"><i class='bx bx-chevron-left'></i></button>
+                    <span id="chat-target-avatar" class="post-avatar">🚀</span>
+                    <strong id="chat-target-name">Astron</strong>
+                    <div style="margin-left:auto; display:flex; gap:12px;">
+                        <button class="icon-btn" onclick="startCall(false)"><i class='bx bx-phone'></i></button>
+                        <button class="icon-btn" onclick="startCall(true)"><i class='bx bx-video'></i></button>
+                    </div>
+                </div>
+                <div id="chat-messages-display" class="chat-messages-area"></div>
+                <div class="chat-box-footer">
+                    <input type="text" id="chat-msg-input" placeholder="Escribe un mensaje encriptado...">
+                    <button id="btn-send-chat" onclick="sendDirectMessage()"><i class='bx bx-send'></i></button>
+                </div>
+            </div>
+        </section>
+
+        <section id="view-notifications" class="app-view">
+            <h3 class="view-title">🔔 Actividad Reciente</h3>
+            <div class="pulse-card">
+                <div class="trend-item"><div class="trend-info"><h4>🚀 A Astron le gustó tu pulso</h4><span>Hace 2m</span></div></div>
+                <div class="trend-item"><div class="trend-info"><h4>👾 Pixel comenzó a seguirte</h4><span>Hace 1h</span></div></div>
+            </div>
+        </section>
+
+        <section id="view-profile" class="app-view">
+            <div class="pulse-card profile-box">
+                <div class="profile-header-ui">
+                    <div class="profile-main-avatar" id="profile-big-avatar">🦊</div>
+                    <div class="profile-stats">
+                        <div><strong id="stat-posts-count">0</strong><p>Pulses</p></div>
+                        <div><strong id="stat-followers-count">1.5k</strong><p>Seguidores</p></div>
+                        <div><strong id="stat-following-count">482</strong><p>Seguidos</p></div>
+                    </div>
+                </div>
+                
+                <h3>⚙️ Editar Perfil & Cuenta</h3>
+                <div class="profile-inputs">
+                    <input type="text" id="profile-name" placeholder="Tu nombre..." value="Usuario Plus">
+                    <select id="profile-avatar-select">
+                        <option value="🦊">🦊 Zorro</option>
+                        <option value="🥷">🥷 Ninja</option>
+                        <option value="🚀">🚀 Astronauta</option>
+                        <option value="👾">👾 Gamer</option>
+                    </select>
+                    
+                    <label for="profile-photo-upload" class="upload-btn"><i class='bx bx-camera'></i> Subir foto de perfil</label>
+                    <input type="file" id="profile-photo-upload" accept="image/*" style="display: none;">
+                    
+                    <button class="upload-btn" style="border-color:#38bdf8; color:#38bdf8;" onclick="switchTab('settings')"><i class='bx bx-cog' ></i> Más Ajustes del Sistema</button>
+                </div>
+            </div>
+
+            <div id="profile-posts-feed"></div>
+        </section>
+
+        <section id="view-settings" class="app-view">
+            <h3 class="view-title">⚙️ Configuraciones Avanzadas</h3>
+            <div class="pulse-card">
+                <h4 style="margin-bottom:10px;">Seguridad de la Cuenta</h4>
+                <p style="font-size:13px; color:#94a3b8; margin-bottom:15px;">Tus pulsos se almacenan de manera local con encriptación de extremo a extremo simulada.</p>
+                <button class="upload-btn" style="border-color:#ef4444; color:#ef4444; width:100%;" onclick="clearSystemCache()">⚠️ Restablecer Datos / Limpiar Caché</button>
+            </div>
+        </section>
+
+    </main>
+
+    <nav class="bottom-nav">
+        <button class="nav-tab active" onclick="switchTab('feed', this)"><i class='bx bx-home-alt-2'></i></button>
+        <button class="nav-tab" onclick="switchTab('search', this)"><i class='bx bx-search'></i></button>
+        <button class="nav-tab" onclick="switchTab('create', this)"><i class='bx bx-plus-circle'></i></button>
+        <button class="nav-tab" onclick="switchTab('trends', this)"><i class='bx bx-compass'></i></button>
+        <button class="nav-tab profile-tab-icon" onclick="switchTab('profile', this)">
+            <span id="nav-profile-icon">🦊</span>
+        </button>
+    </nav>
+
+    <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDVRkOh1x2QSmn_SuuNlYEF51FNNj1o",
+    authDomain: "plus-7bb95.firebaseapp.com",
+    projectId: "plus-7bb95",
+    storageBucket: "plus-7bb95.firebasestorage.app",
+    messagingSenderId: "794281987667",
+    appId: "1:794281987667:web:4416005ed2b652893e36e6",
+    measurementId: "G-5KTEQTEWWZ"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  window.db = getFirestore(app);
+  window.cloud = { collection, addDoc, onSnapshot, query, orderBy };
+  console.log("Servidores de Plus en línea...");
+</script>
+    
+    <!-- TU CÓDIGO -->
+    <script src="script.js"></script>
+</body>
+</html>    
