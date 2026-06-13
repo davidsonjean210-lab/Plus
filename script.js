@@ -4,13 +4,8 @@ let loadedMediaBase64 = "";
 let activeChatUser = null;
 let currentViewedUser = null; 
 
-// Mock de cuentas integradas de la Red Social
-const MOCK_USERS = {
-    "Astron": { avatar: "🚀", verified: true, followers: "840k" },
-    "Pixel": { avatar: "👾", verified: true, followers: "512k" },
-    "Shadow": { avatar: "🥷", verified: false, followers: "12k" },
-    "Cris": { avatar: "👑", verified: true, followers: "1.2M" }
-};
+// Cuentas de la Red Social (Ahora esperando usuarios reales)
+const MOCK_USERS = {};
 
 document.addEventListener("DOMContentLoaded", () => {
     loadProfile();
@@ -37,24 +32,10 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initSystemData() {
-    // Listas reales de interacción almacenadas
-    if(!localStorage.getItem('plus_following')) localStorage.setItem('plus_following', JSON.stringify(["Astron", "Pixel"]));
-    if(!localStorage.getItem('plus_followers')) localStorage.setItem('plus_followers', JSON.stringify(["Shadow", "Cris"]));
+
     
-    if(!localStorage.getItem('plus_stories')) {
-        const initialStories = [
-            { name: "Astron", avatar: "🚀", media: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=500" },
-            { name: "Pixel", avatar: "👾", media: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=500" }
-        ];
-        localStorage.setItem('plus_stories', JSON.stringify(initialStories));
-    }
-    if(!localStorage.getItem('plus_chats')) {
-        const initialChats = {
-            "Astron": [{ sender: "Astron", text: "¡Hola! Bienvenidos a Plus 2026. ¿Qué tal el código?" }]
-        };
-        localStorage.setItem('plus_chats', JSON.stringify(initialChats));
-    }
 }
+
 
 // DETECTAR EVENTOS DE PERFIL
 document.getElementById('profile-name').addEventListener('input', () => {
@@ -564,7 +545,9 @@ function renderFeed(postsArray, containerId) {
         let followBtnHTML = "";
         if(post.name.toLowerCase() !== currentName && MOCK_USERS[post.name]) {
             const isSiguiendo = following.includes(post.name);
-            followBtnHTML = `<button class="follow-btn ${isSiguiendo ? 'following' : ''}" onclick="event.stopPropagation(); toggleFollow('${post.name}', this)">${isSiguiendo ? 'Siguiendo' : 'Seguir'}</button>`;
+// Cambiamos 'post.name' por 'post.userId' (o como se llame el campo del ID en tus datos)
+// También cambiamos la función a 'followUser'
+followBtnHTML = `<button class="follow-btn" data-userid="${post.userId}" onclick="followUser(this)">${isSiguiendo ? 'Siguiendo' : 'Seguir'}</button>`;
         }
 
         card.innerHTML = `
@@ -852,4 +835,27 @@ function limpiarFormulario() {
   if (input) {
     input.value = "";
   }
+}
+async function followUser(botonPresionado) {
+    const targetUserId = botonPresionado.getAttribute("data-userid");
+    const { doc, updateDoc, arrayUnion, increment, getDoc, setDoc } = window.cloud;
+    const auth = getAuth();
+
+    if (!auth.currentUser) return alert("Inicia sesión primero");
+
+    const myRef = doc(window.db, "users", auth.currentUser.uid);
+    const targetRef = doc(window.db, "users", targetUserId);
+
+    // 1. Intentamos actualizar el contador
+    try {
+        await updateDoc(targetRef, { followersCount: increment(1) });
+    } catch (e) {
+        // 2. Si el contador no existe, lo creamos empezando en 1
+        await setDoc(targetRef, { followersCount: 1 }, { merge: true });
+    }
+
+    // 3. Guardamos quién sigue a quién
+    await updateDoc(myRef, { following: arrayUnion(targetUserId) });
+   
+    alert("¡Seguimiento exitoso!");
 }
