@@ -1,861 +1,480 @@
-let posts = [];
-let currentAvatarData = "🦊"; 
-let loadedMediaBase64 = ""; 
-let activeChatUser = null;
-let currentViewedUser = null; 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
-// Cuentas de la Red Social (Ahora esperando usuarios reales)
-const MOCK_USERS = {};
+const firebaseConfig = {
+    apiKey: "AIzaSyDVRkOh1x2QSmn_SuuNlYEF51FNNj1oapk",
+    authDomain: "plus-7bb95.firebaseapp.com",
+    projectId: "plus-7bb95",
+    storageBucket: "plus-7bb95.firebasestorage.app",
+    messagingSenderId: "794281987667",
+    appId: "1:794281987667:web:4416005ed2b652893ec0a6"
+};
 
-document.addEventListener("DOMContentLoaded", () => {
-    loadProfile();
-    initSystemData();
-    loadPosts();
-    renderStoriesUI();
-    renderChatChannels();
-    updateProfileStats(); 
-    renderProfileFeed();  
-    document.getElementById('search-input').addEventListener('input', handleSearch);
-    
-    // Captura de archivos multimedia
-    document.getElementById('pulse-file-media').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if(file) {
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                loadedMediaBase64 = evt.target.result;
-                document.getElementById('media-file-status').textContent = `📁 Archivo Cargado (${file.type.split('/')[0]})`;
-            };
-            reader.readAsDataURL(file);
-        }
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+let currentUser = null; 
+let datosMiPerfilGlobal = null;
+let usuariosGlobales = [];
+let cacheTodosLosPosts = [];
+let desubscribirPosts = null;
+let desubscribirUsuarios = null;
+let desubscribirNotif = null;
+let desubscribirChatMensajes = null;
+let desubscribirStories = null;
+
+let chatUserUidActivo = null;
+let temporizadorHistoria = null;
+let perfilAjenoUidActivo = null;
+
+// ==========================================
+// NAVEGACIÓN Y VISTAS
+// ==========================================
+function mostrarMuro() {
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('main-screen').classList.remove('hidden');
+    navegarA('inicio');
+}
+
+function mostrarLogin() {
+    document.getElementById('auth-screen').classList.remove('hidden');
+    document.getElementById('main-screen').classList.add('hidden');
+    if(desubscribirPosts) desubscribirPosts();
+    if(desubscribirUsuarios) desubscribirUsuarios();
+    if(desubscribirNotif) desubscribirNotif();
+    if(desubscribirStories) desubscribirStories();
+    cerrarChatActivo();
+    terminarVisorHistoria();
+}
+
+function navegarA(tab) {
+    const tabs = ['inicio', 'buscar', 'publicar', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno'];
+    tabs.forEach(t => {
+        const tabEl = document.getElementById(`tab-${t}`);
+        const btnEl = document.getElementById(`btn-tab-${t}`);
+        if(tabEl) tabEl.classList.add('hidden');
+        if(btnEl) btnEl.classList.remove('active');
     });
-});
-
-function initSystemData() {
-
     
+    document.getElementById(`tab-${tab}`).classList.remove('hidden');
+    const activeBtn = document.getElementById(`btn-tab-${tab}`);
+    if(activeBtn) activeBtn.classList.add('active');
+
+    if(tab === 'mensajes') cerrarChatActivo();
+    if(tab !== 'perfil-ajeno') perfilAjenoUidActivo = null;
 }
 
+// ==========================================
+// RENDERIZADO UI
+// ==========================================
+function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
+    const contenedor = document.getElementById(contenedorId);
+    if (!contenedor) return;
+    if (listaDePosts.length === 0) { contenedor.innerHTML = '<p style="color:var(--texto-gris); text-align:center;">Aún no hay publicaciones.</p>'; return; }
+    let html = "";
+    listaDePosts.forEach(post => {
+        const likes = post.likes || [];
+        const comments = post.comments || [];
+        const yaDioLike = currentUser && likes.includes(currentUser.uid);
 
-// DETECTAR EVENTOS DE PERFIL
-document.getElementById('profile-name').addEventListener('input', () => {
-    saveProfileData();
-    updateProfileStats();
-    renderProfileFeed(); 
-});
-document.getElementById('profile-avatar-select').addEventListener('change', function() {
-    saveProfileData(this.value);
-});
-document.getElementById('profile-photo-upload').addEventListener('change', function(event) {
-    const file = event.target.files[0];
-    if (file) {
-        const reader = new FileReader();
-        reader.onload = function(e) { saveProfileData(e.target.result); };
-        reader.readAsDataURL(file);
-    }
-});
-
-function saveProfileData(newAvatarData = null) {
-    const name = document.getElementById('profile-name').value.trim() || "Usuario Plus";
-    if (newAvatarData) currentAvatarData = newAvatarData;
-    const profile = { name, avatar: currentAvatarData };
-    localStorage.setItem('plus_profile', JSON.stringify(profile));
-    updateAvatarUI(currentAvatarData);
-}
-
-function updateAvatarUI(avatarData) {
-    const isImage = avatarData.startsWith('data:image') || avatarData.startsWith('http');
-    const contentHTML = isImage ? `<img src="${avatarData}" class="avatar-img">` : avatarData;
-    document.getElementById('story-my-avatar').innerHTML = contentHTML;
-    document.getElementById('nav-profile-icon').innerHTML = contentHTML;
-    
-    const bigAvatar = document.getElementById('profile-big-avatar');
-    if(bigAvatar && !currentViewedUser) bigAvatar.innerHTML = contentHTML;
-}
-
-function loadProfile() {
-    const savedProfile = localStorage.getItem('plus_profile');
-    if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        document.getElementById('profile-name').value = profile.name;
-        currentAvatarData = profile.avatar;
-        updateAvatarUI(currentAvatarData);
-        if(!currentAvatarData.startsWith('data:image')) {
-            const selectEl = document.getElementById('profile-avatar-select');
-            if(selectEl) selectEl.value = currentAvatarData;
+        let comentariosHtml = "";
+        if(comments.length > 0) {
+            comentariosHtml = `<div class="comment-section">`;
+            comments.forEach(c => { comentariosHtml += `<div style="margin-bottom: 5px;"><b>@${c.username}:</b> <span style="color: var(--texto-gris);">${c.text}</span></div>`; });
+            comentariosHtml += `</div>`;
         }
-    }
-}
 
-function switchTab(tabName, buttonElement) {
-    const tabs = document.querySelectorAll('.nav-tab');
-    tabs.forEach(tab => tab.classList.remove('active'));
-    if(buttonElement) buttonElement.classList.add('active');
-
-    const views = document.querySelectorAll('.app-view');
-    views.forEach(view => view.classList.remove('active-view'));
-    
-    document.getElementById(`view-${tabName}`).classList.add('active-view');
-    
-    if (tabName === 'feed') window.scrollTo({ top: 0, behavior: 'smooth' });
-    if (tabName === 'profile') {
-        if (buttonElement !== null) currentViewedUser = null;
-        updateProfileStats();
-        renderProfileFeed(); 
-    }
-}
-
-function openUserProfile(username) {
-    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
-    if (username.toLowerCase() === myName.toLowerCase()) {
-        currentViewedUser = null; 
-    } else {
-        currentViewedUser = username; 
-    }
-    switchTab('profile', null);
-}
-
-// NAVEGACIÓN Y ESTADÍSTICAS REALES
-function updateProfileStats() {
-    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
-    const targetUser = currentViewedUser || myName;
-    
-    // Contar publicaciones
-    const userPostsCount = posts.filter(post => post.name.toLowerCase() === targetUser.toLowerCase()).length;
-    const postsStat = document.getElementById('stat-posts-count');
-    if (postsStat) postsStat.textContent = userPostsCount;
-    
-    const followingStat = document.getElementById('stat-following-count');
-    const followersStat = document.getElementById('stat-followers-count');
-
-    // CONVERTIR LOS NÚMEROS EN BOTONES CLICKEABLES
-    [followersStat, followingStat].forEach(stat => {
-        if(stat && stat.parentElement) {
-            stat.parentElement.style.cursor = 'pointer';
-            stat.parentElement.title = "Ver lista de usuarios";
-            // Efecto sutil visual para indicar que es interactivo
-            stat.parentElement.onmouseenter = () => stat.parentElement.style.opacity = '0.7';
-            stat.parentElement.onmouseleave = () => stat.parentElement.style.opacity = '1';
-        }
-    });
-
-    if(followersStat && followersStat.parentElement) followersStat.parentElement.onclick = () => openConnectionsModal('followers');
-    if(followingStat && followingStat.parentElement) followingStat.parentElement.onclick = () => openConnectionsModal('following');
-
-    if (currentViewedUser) {
-        // Estadísticas de perfil ajeno (Simuladas en formato texto)
-        if (followingStat) followingStat.textContent = "120";
-        const mockInfo = MOCK_USERS[currentViewedUser];
-        if (followersStat) followersStat.textContent = mockInfo ? mockInfo.followers : "0";
-    } else {
-        // Mis propias estadísticas (Cantidades Reales Exactas)
-        const following = JSON.parse(localStorage.getItem('plus_following') || "[]");
-        const followers = JSON.parse(localStorage.getItem('plus_followers') || "[]");
-        
-        if (followingStat) followingStat.textContent = following.length;
-        if (followersStat) followersStat.textContent = followers.length;
-    }
-    
-    // CONTROL DE INTERFAZ
-    const nameInput = document.getElementById('profile-name');
-    const avatarSelect = document.getElementById('profile-avatar-select');
-    let dynamicHeader = document.getElementById('profile-dynamic-view-header');
-    
-    if (!dynamicHeader && nameInput) {
-        dynamicHeader = document.createElement('div');
-        dynamicHeader.id = 'profile-dynamic-view-header';
-        nameInput.parentNode.insertBefore(dynamicHeader, nameInput);
-    }
-    
-    if (nameInput) {
-        if (currentViewedUser) {
-            nameInput.style.display = 'none';
-            if (avatarSelect) avatarSelect.style.display = 'none';
-            
-            let siblings = nameInput.parentNode.children;
-            for (let el of siblings) {
-                if (el.id !== 'profile-dynamic-view-header' && el.id !== 'profile-big-avatar' && el.id !== 'profile-posts-feed' && !el.contains(nameInput) && !el.innerText?.includes('Pulses') && !el.innerText?.includes('Seguidores')) {
-                    if (el.tagName !== 'STYLE' && !el.classList.contains('profile-grid')) {
-                        el.style.display = 'none';
-                    }
-                }
-            }
-            
-            const mockInfo = MOCK_USERS[currentViewedUser];
-            const isVerified = mockInfo?.verified || false;
-            const followingList = JSON.parse(localStorage.getItem('plus_following') || "[]");
-            const isSiguiendo = followingList.includes(currentViewedUser);
-            
-            dynamicHeader.innerHTML = `
-                <div style="text-align: center; margin-top: 15px; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
-                    <h2 style="color: white; font-size: 20px; margin: 0 0 5px 0; display: flex; align-items: center; justify-content: center; gap: 5px;">
-                        ${currentViewedUser} ${isVerified ? "<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>":""}
-                    </h2>
-                    <button class="follow-btn ${isSiguiendo ? 'following' : ''}" style="width: 100%; padding: 10px; margin-top: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="toggleFollowFromProfile('${currentViewedUser}', this)">
-                        ${isSiguiendo ? 'Siguiendo' : 'Seguir'}
+        html += `
+            <div class="custom-card">
+                <div class="card-top">
+                    <span style="color: var(--texto-blanco); cursor:pointer; font-weight: bold;" onclick="verPerfilDe('${post.uid}')">@${post.username || "anonimo"}</span>
+                    <span>Post</span>
+                </div>
+                <p class="card-main-text" style="font-weight:normal; font-size:15px; margin-top:8px;">${post.text}</p>
+                <div class="action-bar">
+                    <button class="action-btn ${yaDioLike ? 'liked' : ''}" onclick="ejecutarLike('${post.id}', '${post.uid}')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="${yaDioLike ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        ${likes.length}
+                    </button>
+                    <button class="action-btn" onclick="ejecutarComentar('${post.id}')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                        ${comments.length} Responder
                     </button>
                 </div>
-                <h3 style="color: #a855f7; font-size: 14px; margin: 20px 0 10px 0; text-transform: uppercase;">
-                    📝 Publicaciones de ${currentViewedUser}
-                </h3>
-            `;
-            dynamicHeader.style.display = 'block';
-            
-            const targetAvatar = mockInfo ? mockInfo.avatar : "👤";
-            const isImg = targetAvatar.startsWith('data:image') || targetAvatar.startsWith('http');
-            document.getElementById('profile-big-avatar').innerHTML = isImg ? `<img src="${targetAvatar}" class="avatar-img">` : targetAvatar;
-            
-        } else {
-            nameInput.style.display = 'block';
-            if (avatarSelect) avatarSelect.style.display = 'block';
-            
-            let siblings = nameInput.parentNode.children;
-            for (let el of siblings) {
-                if (el.id !== 'profile-dynamic-view-header' && el.id !== 'post-detail-modal' && el.id !== 'connections-modal') {
-                    el.style.display = '';
-                }
-            }
-            if (dynamicHeader) dynamicHeader.style.display = 'none';
-            
-            updateAvatarUI(currentAvatarData);
-        }
-    }
-}
-
-// ==========================================
-// VENTANA FLOTANTE DE SEGUIDORES / SIGUIENDO
-// ==========================================
-function openConnectionsModal(type) {
-    let modal = document.getElementById('connections-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'connections-modal';
-        modal.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.95); display: flex; align-items: center;
-            justify-content: center; z-index: 10000; padding: 20px; backdrop-filter: blur(8px);
+                ${comentariosHtml}
+            </div>
         `;
-        document.body.appendChild(modal);
-    }
+    });
+    contenedor.innerHTML = html;
+}
 
-    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim();
-    const targetUser = currentViewedUser || myName;
-    
-    let usersList = [];
-    if (targetUser === myName) {
-        // Tus listas reales y exactas
-        usersList = type === 'followers' 
-            ? JSON.parse(localStorage.getItem('plus_followers') || "[]")
-            : JSON.parse(localStorage.getItem('plus_following') || "[]");
-    } else {
-        // Listas simuladas si miras el perfil de otro
-        if (type === 'followers') {
-            usersList = ["Pixel", "Cris", "Shadow"].filter(u => u !== targetUser);
-            if (JSON.parse(localStorage.getItem('plus_following') || "[]").includes(targetUser)) usersList.push(myName);
-        } else {
-            usersList = ["Astron", "Pixel"].filter(u => u !== targetUser);
-        }
-    }
-
-    let listHTML = "";
-    if (usersList.length === 0) {
-        listHTML = `<p style="text-align:center; color:#64748b; margin-top:20px; font-size:14px;">Aún no hay usuarios aquí.</p>`;
-    } else {
-        usersList.forEach(username => {
-            let avatar = "👤";
-            let isVerified = false;
-            
-            if (username === myName) {
-                avatar = currentAvatarData;
-            } else if (MOCK_USERS[username]) {
-                avatar = MOCK_USERS[username].avatar;
-                isVerified = MOCK_USERS[username].verified;
-            }
-
-            const isAvatarImg = avatar.startsWith('data:image') || avatar.startsWith('http');
-            const avatarHTML = isAvatarImg ? `<img src="${avatar}" class="avatar-img" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">` : `<div style="font-size:24px; text-align:center; line-height:40px;">${avatar}</div>`;
-            const badge = isVerified ? `<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>` : "";
-
-            listHTML += `
-                <div style="display:flex; align-items:center; gap:15px; padding:12px; border-bottom:1px solid #334155; cursor:pointer; transition: background 0.3s;" 
-                     onmouseenter="this.style.background='#1e293b'" onmouseleave="this.style.background='transparent'"
-                     onclick="closeConnectionsModal(); openUserProfile('${username}')">
-                    <div style="width:45px; height:45px; background:#1e293b; border-radius:50%; border:2px solid #38bdf8; display:flex; align-items:center; justify-content:center; overflow:hidden;">
-                        ${avatarHTML}
-                    </div>
-                    <div style="color:white; font-weight:bold; font-size:16px;">
-                        ${username} ${badge}
-                    </div>
-                    <i class='bx bx-chevron-right' style="color:#64748b; margin-left:auto; font-size:24px;"></i>
-                </div>
-            `;
-        });
-    }
-
-    const title = type === 'followers' ? '👥 Seguidores' : '✨ Siguiendo';
-
-    modal.innerHTML = `
-        <div style="position: relative; width: 100%; max-width: 400px; background:#0f172a; border-radius:16px; border:1px solid #334155; max-height:75vh; display:flex; flex-direction:column; box-shadow: 0 10px 25px rgba(0,0,0,0.8);">
-            <div style="padding:18px 20px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; background:#1e293b; border-radius:16px 16px 0 0;">
-                <h3 style="color:white; margin:0; font-size:18px;">${title}</h3>
-                <button onclick="closeConnectionsModal()" style="background:none; border:none; color:#94a3b8; font-size:28px; cursor:pointer;"><i class='bx bx-x'></i></button>
+function generarHtmlUsuario(user) {
+    const yaLoSigo = datosMiPerfilGlobal?.following?.includes(user.uid);
+    return `
+        <div class="custom-card" style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="cursor:pointer;" onclick="verPerfilDe('${user.uid}')">
+                <span style="font-weight:bold; display:block; color:var(--texto-blanco);">@${user.username}</span>
+                <small style="color:var(--texto-gris);">${user.bio || 'Nuevo en plus.'}</small>
             </div>
-            <div style="padding:5px; overflow-y:auto; flex:1;">
-                ${listHTML}
-            </div>
-        </div>
-    `;
-    modal.style.display = 'flex';
-}
-
-function closeConnectionsModal() {
-    const modal = document.getElementById('connections-modal');
-    if (modal) modal.style.display = 'none';
-}
-
-function toggleFollowFromProfile(username, btn) {
-    toggleFollow(username, btn);
-    updateProfileStats();
-}
-
-function renderProfileFeed() {
-    const myName = (document.getElementById('profile-name').value || "Usuario Plus").trim().toLowerCase();
-    const targetUser = currentViewedUser ? currentViewedUser.toLowerCase() : myName;
-    
-    const myPosts = posts.filter(post => post.name.toLowerCase() === targetUser);
-    const container = document.getElementById('profile-posts-feed');
-    if (!container) return;
-    container.innerHTML = ""; 
-
-    if (myPosts.length === 0) {
-        container.innerHTML = `<p class="placeholder-text" style="text-align:center; padding: 20px; color:#64748b; font-size:14px;">No hay publicaciones aún.</p>`;
-        return;
-    }
-
-    const grid = document.createElement('div');
-    grid.classList.add('profile-grid');
-
-    myPosts.forEach(post => {
-        const item = document.createElement('div');
-        item.classList.add('profile-grid-item');
-
-        let innerContent = "";
-        let topIcon = "";
-
-        if (post.image) {
-            const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
-            if (isVideo) {
-                innerContent = `<video src="${post.image}" class="profile-grid-img"></video>`;
-                topIcon = `<i class='bx bx-play-circle grid-top-icon'></i>`;
-            } else {
-                innerContent = `<img src="${post.image}" class="profile-grid-img">`;
-            }
-        } else {
-            innerContent = `<div class="profile-grid-text">${post.text.substring(0, 60)}...</div>`;
-            topIcon = `<i class='bx bx-text grid-top-icon'></i>`;
-        }
-
-        const deleteBtnHTML = !currentViewedUser ? `
-            <button class="grid-delete-btn" onclick="event.stopPropagation(); deletePulse(${post.id})">
-                <i class='bx bx-trash'></i>
+            <button class="btn-follow-action ${yaLoSigo ? 'following' : ''}" onclick="ejecutarSeguir('${user.uid}')">
+                ${yaLoSigo ? 'Siguiendo' : 'Seguir'}
             </button>
-        ` : '';
-
-        item.innerHTML = `
-            <div style="width:100%; height:100%; cursor:pointer;" onclick="openFullPostModal(${post.id})">
-                ${innerContent}
-                ${topIcon}
-            </div>
-            ${deleteBtnHTML}
-        `;
-        grid.appendChild(item);
-    });
-
-    container.appendChild(grid);
-}
-
-function openFullPostModal(postId) {
-    const post = posts.find(p => p.id === postId);
-    if (!post) return;
-
-    let modal = document.getElementById('post-detail-modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'post-detail-modal';
-        modal.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 23, 42, 0.95); display: flex; align-items: center;
-            justify-content: center; z-index: 9999; padding: 20px; backdrop-filter: blur(8px);
-        `;
-        document.body.appendChild(modal);
-    }
-
-    let mediaHTML = "";
-    if (post.image) {
-        const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
-        if (isVideo) {
-            mediaHTML = `<video src="${post.image}" class="post-video" controls autoplay style="max-height:45vh; width:100%; object-fit:contain; border-radius:8px;"></video>`;
-        } else {
-            mediaHTML = `<img src="${post.image}" class="post-image" style="max-height:50vh; width:100%; object-fit:contain; border-radius:8px;">`;
-        }
-    }
-
-    const isAvatarImg = post.avatar && (post.avatar.startsWith('data:image') || post.avatar.startsWith('http'));
-    const avatarHTML = isAvatarImg ? `<img src="${post.avatar}" class="avatar-img">` : post.avatar;
-    const isVerified = MOCK_USERS[post.name]?.verified || post.name === "Mundo Deportes" || post.name === "AstroNews";
-    const verifiedBadge = isVerified ? `<i class='bx bxs-badge-check' style='color: #38bdf8; font-size:14px;'></i>` : '';
-
-    modal.innerHTML = `
-        <div style="position: relative; width: 100%; max-width: 480px; background:#0f172a; border-radius:12px;">
-            <button onclick="closeFullPostModal()" style="position: absolute; top: -45px; right: 0; background: none; border: none; color: #94a3b8; font-size: 32px; cursor: pointer;"><i class='bx bx-x'></i></button>
-            
-            <div class="pulse-card ${post.vibe}" style="margin:0; border:1px solid #334155;">
-                <div class="card-header">
-                    <div class="card-user-info" style="cursor:pointer;" onclick="closeFullPostModal(); openUserProfile('${post.name}')">
-                        <span class="post-avatar">${avatarHTML}</span>
-                        <div>
-                            <span class="username">${post.name} ${verifiedBadge}</span>
-                            <span class="badge">${post.vibeText}</span>
-                        </div>
-                    </div>
-                    <span class="time">${post.time}</span>
-                </div>
-                <p class="card-text" style="white-space: pre-wrap;">${post.text}</p>
-                ${mediaHTML}
-                <div class="card-footer">
-                    <button class="reaction-btn ${post.userReactedFire ? 'active' : ''}" onclick="toggleReactionInModal(${post.id}, 'fire')">🔥 <span class="count">${post.reactions.fire}</span></button>
-                    <button class="reaction-btn ${post.userReactedHeart ? 'active' : ''}" onclick="toggleReactionInModal(${post.id}, 'heart')">💜 <span class="count">${post.reactions.heart}</span></button>
-                </div>
-            </div>
         </div>
     `;
-    modal.style.display = 'flex';
 }
 
-function closeFullPostModal() {
-    const modal = document.getElementById('post-detail-modal');
-    if (modal) modal.style.display = 'none';
-}
-
-function toggleReactionInModal(postId, type) {
-    const post = posts.find(p => p.id === postId);
-    if (!post) return;
-    if (type === 'fire') {
-        if (post.userReactedFire) { post.reactions.fire--; post.userReactedFire = false; }
-        else { post.reactions.fire++; post.userReactedFire = true; }
-    } else if (type === 'heart') {
-        if (post.userReactedHeart) { post.reactions.heart--; post.userReactedHeart = false; }
-        else { post.reactions.heart++; post.userReactedHeart = true; }
-    }
-    localStorage.setItem('plus_posts', JSON.stringify(posts));
-    renderFeed(posts, 'pulse-feed');
-    renderProfileFeed(); 
-    openFullPostModal(postId); 
-}
-
-function toggleFollow(username, btn) {
-    let following = JSON.parse(localStorage.getItem('plus_following') || "[]");
-    if(following.includes(username)){
-        following = following.filter(u => u !== username);
-        btn.textContent = "Seguir";
-        btn.classList.remove('following');
-    } else {
-        following.push(username);
-        btn.textContent = "Siguiendo";
-        btn.classList.add('following');
-    }
-    localStorage.setItem('plus_following', JSON.stringify(following));
-    updateProfileStats();
+function dibujarUsuarios() {
+    const contenedor = document.getElementById('users-container');
+    const otros = usuariosGlobales.filter(u => u.uid !== currentUser.uid);
+    if (otros.length === 0) { contenedor.innerHTML = '<p>Sin recomendaciones.</p>'; return; }
+    let html = ""; otros.forEach(user => { html += generarHtmlUsuario(user); });
+    contenedor.innerHTML = html;
     
-    // Si estás viendo la lista de "Siguiendo" abierta, repíntala para actualizar en vivo
-    if (document.getElementById('connections-modal') && document.getElementById('connections-modal').style.display === 'flex') {
-        // En este caso simple, no forzamos repintado para no cerrar y abrir el modal feo.
-    }
-}
-// MOTOR DEL FEED
-function loadPosts() {
-    // Si Firebase está conectado, leemos de la nube
-    if (window.db && window.cloud) {
-        try {
-            const q = window.cloud.query(window.cloud.collection(window.db, "posts"), window.cloud.orderBy("timestamp", "desc"));
-            window.cloud.onSnapshot(q, (snapshot) => {
-                posts = [];
-                snapshot.forEach((doc) => {
-                    posts.push({ id: doc.id, ...doc.data() });
-                });
-                renderFeed(posts, 'pulse-feed');
-            });
-            return; 
-        } catch (e) {
-            console.log("Usando modo local.");
-        }
-    }
-
-    // MODO LOCAL
-    const savedPosts = localStorage.getItem('plus_posts');
-    if (savedPosts) {
-        posts = JSON.parse(savedPosts);
-    } else {
-        posts = [
-            {
-                id: 3, name: "Mundo Deportes", avatar: "⚽", vibe: "vibe-moment", vibeText: "📸 Momento", time: "Hace 5m",
-                text: "¡Arrancó oficialmente el torneo! El ambiente es una locura absoluta en el estadio. #WorldCup2026",
-                image: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500",
-                reactions: { fire: 124, heart: 98 }
-            }
-        ];
-        localStorage.setItem('plus_posts', JSON.stringify(posts));
-    }
-    renderFeed(posts, 'pulse-feed');
+    dibujarListaContactosChat(otros);
 }
 
-function renderFeed(postsArray, containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.innerHTML = ""; 
-
-    if (postsArray.length === 0) {
-        container.innerHTML = `<p class="placeholder-text" style="text-align:center; padding: 20px; color:#64748b; font-size:14px;">No hay publicaciones aquí todavía.</p>`;
-        return;
-    }
-
-    const following = JSON.parse(localStorage.getItem('plus_following') || "[]");
-    const currentName = document.getElementById('profile-name').value.trim().toLowerCase();
-
-    postsArray.forEach(post => {
-        const card = document.createElement('div');
-        card.classList.add('pulse-card', post.vibe);
-
-        let mediaHTML = "";
-        if (post.image) {
-            const isVideo = post.image.match(/\.(mp4|webm|ogg)$/i) || post.image.startsWith('data:video');
-            if (isVideo) {
-                mediaHTML = `<video src="${post.image}" class="post-video" controls></video>`;
-            } else {
-                mediaHTML = `<img src="${post.image}" class="post-image" onerror="this.style.display='none'">`;
-            }
-        }
-
-        const isAvatarImg = post.avatar && (post.avatar.startsWith('data:image') || post.avatar.startsWith('http'));
-        const avatarHTML = isAvatarImg ? `<img src="${post.avatar}" class="avatar-img">` : post.avatar;
-
-        const isVerified = MOCK_USERS[post.name]?.verified || post.name === "Mundo Deportes" || post.name === "AstroNews";
-        const verifiedBadge = isVerified ? `<i class='bx bxs-badge-check' style='color: #38bdf8; font-size:14px;'></i>` : '';
-
-        let followBtnHTML = "";
-        if(post.name.toLowerCase() !== currentName && MOCK_USERS[post.name]) {
-            const isSiguiendo = following.includes(post.name);
-// Cambiamos 'post.name' por 'post.userId' (o como se llame el campo del ID en tus datos)
-// También cambiamos la función a 'followUser'
-followBtnHTML = `<button class="follow-btn" data-userid="${post.userId}" onclick="followUser(this)">${isSiguiendo ? 'Siguiendo' : 'Seguir'}</button>`;
-        }
-
-        card.innerHTML = `
-            <div class="card-header">
-                <div class="card-user-info" style="cursor:pointer;" onclick="openUserProfile('${post.name}')">
-                    <span class="post-avatar">${avatarHTML}</span>
-                    <div>
-                        <span class="username">${post.name} ${verifiedBadge}</span>
-                        <span class="badge">${post.vibeText}</span>
-                    </div>
+function dibujarListaContactosChat(listaOtrosUsuarios) {
+    const contenedor = document.getElementById('chat-users-list');
+    if(listaOtrosUsuarios.length === 0) { contenedor.innerHTML = '<p style="color:var(--texto-gris);">No hay usuarios disponibles.</p>'; return; }
+    let html = "";
+    listaOtrosUsuarios.forEach(u => {
+        html += `
+            <div class="custom-card" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="entrarAlChat('${u.uid}', '${u.username}')">
+                <div>
+                    <span style="font-weight:bold; color:var(--texto-blanco);">@${u.username}</span>
+                    <small style="display:block; color:var(--texto-gris);">Toca para abrir chat privado</small>
                 </div>
-                ${followBtnHTML}
-                <span class="time">${post.time}</span>
-            </div>
-            <p class="card-text">${post.text}</p>
-            ${mediaHTML}
-            <div class="card-footer">
-                <button class="reaction-btn ${post.userReactedFire ? 'active' : ''}" onclick="toggleReaction(${post.id}, 'fire', '${containerId}')">🔥 <span class="count">${post.reactions.fire}</span></button>
-                <button class="reaction-btn ${post.userReactedHeart ? 'active' : ''}" onclick="toggleReaction(${post.id}, 'heart', '${containerId}')">💜 <span class="count">${post.reactions.heart}</span></button>
-                ${post.name.toLowerCase() === currentName ? `<button class="icon-btn" style="margin-left:auto; color:#ef4444; font-size:18px;" onclick="event.stopPropagation(); deletePulse(${post.id})"><i class='bx bx-trash'></i></button>` : ''}
+                <span style="color: var(--azul-pulses);">💬</span>
             </div>
         `;
-        container.appendChild(card);
     });
+    contenedor.innerHTML = html;
 }
 
-function deletePulse(id) {
-    posts = posts.filter(p => p.id !== id);
-    localStorage.setItem('plus_posts', JSON.stringify(posts));
-    renderFeed(posts, 'pulse-feed');
-    renderProfileFeed(); 
-    updateProfileStats();
+function dibujarMiPerfil() {
+    const contenedor = document.getElementById('profile-container');
+    if(!datosMiPerfilGlobal) return;
+    contenedor.innerHTML = `
+        <div class="profile-card">
+            <div class="avatar-circle"><svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" stroke-width="2" fill="none" style="color: var(--texto-gris);"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+            <h2 style="margin: 5px 0; font-size:24px;">@${datosMiPerfilGlobal.username}</h2>
+            <p style="color: var(--texto-blanco); margin: 8px 0; font-size:15px;">${datosMiPerfilGlobal.bio || 'Sin biografía'}</p>
+        </div>
+        <div class="stats-row">
+            <div class="stat-box"><span>${datosMiPerfilGlobal.followersCount || 0}</span><label>Seguidores</label></div>
+            <div class="stat-box"><span>${datosMiPerfilGlobal.following?.length || 0}</span><label>Siguiendo</label></div>
+        </div>
+    `;
 }
 
-// LANZAR PUBLICACIÓN 
-document.getElementById('btn-pulse-publish').addEventListener('click', async function() {
-    const text = document.getElementById('pulse-input').value.trim();
-    let image = document.getElementById('pulse-image').value.trim();
-    if(typeof loadedMediaBase64 !== 'undefined' && loadedMediaBase64) image = loadedMediaBase64;
-
-    if (text === "" && image === "") {
-        alert("¡No puedes lanzar un pulso vacío!");
+function dibujarNotificaciones(lista) {
+    const contenedor = document.getElementById('notifications-container');
+    if(lista.length === 0) {
+        contenedor.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--texto-gris);">No tienes actividad reciente.</div>';
         return;
     }
+    lista.sort((a, b) => (b.timestamp?.toMillis() || Date.now()) - (a.timestamp?.toMillis() || Date.now()));
 
-    const vibeSelect = document.getElementById('pulse-vibe');
-    const currentName = document.getElementById('profile-name').value.trim() || "Usuario Plus";
+    let html = "";
+    lista.forEach(n => {
+        let mensaje = n.type === 'like' ? `🚀 A ${n.fromUsername} le gustó tu pulso` : `👾 ${n.fromUsername} comenzó a seguirte`;
+        html += `<div class="notif-item"><p class="notif-text">${mensaje}</p><p class="notif-time">NUEVO</p></div>`;
+    });
+    contenedor.innerHTML = html;
+}
 
-    const newPost = {
-        name: currentName, 
-        avatar: typeof currentAvatarData !== 'undefined' ? currentAvatarData : "🦊",
-        vibe: vibeSelect.value, 
-        vibeText: vibeSelect.options[vibeSelect.selectedIndex].text,
-        time: "Ahora mismo", 
-        text: text, 
-        image: image,
-        reactions: { fire: 0, heart: 0 },
-        timestamp: Date.now()
-    };
+function dibujarHistoriasBarra(listaStories) {
+    const contenedor = document.getElementById('stories-carousel-container');
+    let html = `
+        <div>
+            <div class="story-circle create" onclick="solicitarCrearHistoria()">＋</div>
+            <div class="story-username">Tú</div>
+        </div>
+    `;
 
-    // INTENTAR GUARDAR EN FIREBASE
-    if (window.db && window.cloud) {
-        try {
-            await window.cloud.addDoc(window.cloud.collection(window.db, "posts"), newPost);
-            limpiarFormulario();
-            return; 
-        } catch (e) {
-            console.log("Guardando localmente.");
+    const limite24Horas = Date.now() - (24 * 60 * 60 * 1000);
+    const historiasValidas = listaStories.filter(s => {
+        const t = s.timestamp ? s.timestamp.toMillis() : Date.now();
+        return t > limite24Horas;
+    });
+
+    const usuariosVistos = [];
+    historiasValidas.forEach(story => {
+        if(!usuariosVistos.includes(story.uid)) {
+            usuariosVistos.push(story.uid);
+            html += `
+                <div>
+                    <div class="story-circle" onclick="lanzarVisorHistoria('${story.text.replace(/'/g, "\\'")}', '${story.username}')">
+                        <span style="font-size:20px;">👤</span>
+                    </div>
+                    <div class="story-username" style="cursor:pointer;" onclick="verPerfilDe('${story.uid}')">@${story.username}</div>
+                </div>
+            `;
         }
-    }
-
-    // RESPALDO LOCAL
-    newPost.id = Date.now();
-    posts.unshift(newPost);
-    localStorage.setItem('plus_posts', JSON.stringify(posts));
-    
-    limpiarFormulario();
-    renderFeed(posts, 'pulse-feed');
-    if(typeof updateProfileStats === 'function') updateProfileStats();
-    if(typeof renderProfileFeed === 'function') renderProfileFeed();
-    switchTab('feed', null); 
-});
-
-// GESTIÓN DE HISTORIAS DE USUARIOS
-function triggerStoryUpload() {
-    document.getElementById('story-file-upload').click();
-}
-document.getElementById('story-file-upload').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if(file) {
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
-            const currentName = document.getElementById('profile-name').value.trim() || "Usuario Plus";
-            stories.unshift({ name: currentName, avatar: currentAvatarData, media: evt.target.result });
-            localStorage.setItem('plus_stories', JSON.stringify(stories));
-            renderStoriesUI();
-            alert("¡Historia subida con éxito a tu pulso!");
-        };
-        reader.readAsDataURL(file);
-    }
-});
-
-function renderStoriesUI() {
-    const container = document.getElementById('friends-stories');
-    if(!container) return;
-    container.innerHTML = "";
-    const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
-    
-    stories.forEach((st, index) => {
-        const item = document.createElement('div');
-        item.classList.add('story-item');
-        item.onclick = () => openStoryViewer(index);
-        const isImg = st.avatar.startsWith('data:image') || st.avatar.startsWith('http');
-        const avHTML = isImg ? `<img src="${st.avatar}" class="avatar-img">` : st.avatar;
-        
-        item.innerHTML = `<div class="story-circle ring-neon">${avHTML}</div><span>${st.name}</span>`;
-        container.appendChild(item);
     });
+
+    contenedor.innerHTML = html;
 }
 
-let storyTimer = null;
-function openStoryViewer(index) {
-    const stories = JSON.parse(localStorage.getItem('plus_stories') || "[]");
-    const story = stories[index];
-    if(!story) return;
-
-    document.getElementById('story-modal-username').textContent = story.name;
-    document.getElementById('story-modal-avatar').innerHTML = story.avatar.startsWith('data:image') ? `<img src="${story.avatar}" class="avatar-img">` : story.avatar;
-    document.getElementById('story-modal-content').innerHTML = `<img src="${story.media}" class="story-image-full">`;
+// ==========================================
+// VISUALIZACIÓN DE PERFIL DE TERCEROS
+// ==========================================
+function verPerfilUsuario(targetUid) {
+    if(currentUser && targetUid === currentUser.uid) { navegarA('perfil'); return; }
     
-    document.getElementById('story-modal').style.display = 'flex';
-    const progress = document.getElementById('story-progress');
-    progress.style.width = '0%';
-    setTimeout(() => progress.style.width = '100%', 50);
-
-    storyTimer = setTimeout(() => closeStory(), 4050);
-}
-function closeStory() {
-    clearTimeout(storyTimer);
-    document.getElementById('story-modal').style.display = 'none';
+    perfilAjenoUidActivo = targetUid;
+    navegarA('perfil-ajeno');
+    actualizarVistaPerfilAjeno();
 }
 
-// BANDEJA DE ENTRADA Y CHAT EN VIVO ENCRIPTADO
-function renderChatChannels() {
-    const list = document.getElementById('chat-channels-list');
-    if(!list) return;
-    list.innerHTML = "";
+function actualizarVistaPerfilAjeno() {
+    if(!perfilAjenoUidActivo) return;
+    const targetUser = usuariosGlobales.find(u => u.uid === perfilAjenoUidActivo);
+    const contenedorPerfil = document.getElementById('user-profile-container');
     
-    Object.keys(MOCK_USERS).forEach(user => {
-        const row = document.createElement('div');
-        row.classList.add('chat-channel-row');
-        row.onclick = () => openChatWith(user);
-        
-        row.innerHTML = `
-            <div class="post-avatar">${MOCK_USERS[user].avatar}</div>
-            <div>
-                <strong>${user} ${MOCK_USERS[user].verified ? "<i class='bx bxs-badge-check' style='color:#38bdf8;'></i>":""}</strong>
-                <p style="font-size:12px; color:#64748b;">Pulsa para abrir chat encriptado...</p>
-            </div>
-        `;
-        list.appendChild(row);
-    });
+    if(!targetUser) { contenedorPerfil.innerHTML = "<p>Usuario no encontrado.</p>"; return; }
+    
+    const yaLoSigo = datosMiPerfilGlobal?.following?.includes(targetUser.uid);
+    
+    contenedorPerfil.innerHTML = `
+        <div class="profile-card">
+            <div class="avatar-circle"><svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" stroke-width="2" fill="none" style="color: var(--texto-gris);"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></div>
+            <h2 style="margin: 5px 0; font-size:24px;">@${targetUser.username}</h2>
+            <p style="color: var(--texto-blanco); margin: 8px 0; font-size:15px;">${targetUser.bio || 'Sin biografía'}</p>
+            <button class="btn-plus ${yaLoSigo ? 'btn-plus-sec' : ''}" style="width:auto; padding: 8px 24px; border-radius: 20px; margin-top: 10px;" onclick="ejecutarSeguir('${targetUser.uid}')">
+                ${yaLoSigo ? '❌ Dejar de seguir' : '🤝 Seguir'}
+            </button>
+        </div>
+        <div class="stats-row">
+            <div class="stat-box"><span>${targetUser.followersCount || 0}</span><label>Seguidores</label></div>
+            <div class="stat-box"><span>${targetUser.following?.length || 0}</span><label>Siguiendo</label></div>
+        </div>
+        <div class="seccion-titulo" style="margin-top:25px;">📝 Pulses de @${targetUser.username}</div>
+    `;
+
+    const postsFiltrados = cacheTodosLosPosts.filter(p => p.uid === targetUser.uid);
+    dibujarPosts(postsFiltrados, 'user-feed-container');
 }
 
-function openChatWith(username) {
-    activeChatUser = username;
-    document.getElementById('chat-channels-list').style.display = 'none';
-    document.getElementById('active-chat-box').style.display = 'block';
-    document.getElementById('chat-target-name').textContent = username;
-    document.getElementById('chat-target-avatar').textContent = MOCK_USERS[username].avatar;
-    renderMessages();
+// ==========================================
+// LÓGICA DE HISTORIAS
+// ==========================================
+async function crearNuevaHistoria(texto) {
+    try {
+        await addDoc(collection(db, "stories"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, timestamp: serverTimestamp() });
+    } catch(e) { console.error("Error al crear historia:", e); }
 }
 
-function closeActiveChat() {
-    document.getElementById('chat-channels-list').style.display = 'block';
-    document.getElementById('active-chat-box').style.display = 'none';
-    activeChatUser = null;
-}
-
-function renderMessages() {
-    const area = document.getElementById('chat-messages-display');
-    area.innerHTML = "";
-    if(!activeChatUser) return;
+function reproducirHistoria(texto, usuario) {
+    terminarVisorHistoria();
+    document.getElementById('story-viewer-username').innerText = `@${usuario}`;
+    document.getElementById('story-viewer-content').innerText = texto;
     
-    const chats = JSON.parse(localStorage.getItem('plus_chats') || "{}");
-    const userMsgs = chats[activeChatUser] || [];
+    const visor = document.getElementById('story-viewer');
+    const barraProgreso = document.getElementById('story-progress-bar');
     
-    userMsgs.forEach(m => {
-        const bub = document.createElement('div');
-        bub.classList.add('msg-bubble', m.sender === "me" ? 'sent' : 'received');
-        bub.textContent = m.text;
-        area.appendChild(bub);
-    });
-    area.scrollTop = area.scrollHeight;
-}
-
-function sendDirectMessage() {
-    const inp = document.getElementById('chat-msg-input');
-    const txt = inp.value.trim();
-    if(!txt || !activeChatUser) return;
-    
-    const chats = JSON.parse(localStorage.getItem('plus_chats') || "{}");
-    if(!chats[activeChatUser]) chats[activeChatUser] = [];
-    
-    chats[activeChatUser].push({ sender: "me", text: txt });
-    localStorage.setItem('plus_chats', JSON.stringify(chats));
-    inp.value = "";
-    renderMessages();
+    visor.classList.remove('hidden');
+    barraProgreso.style.width = '0%';
     
     setTimeout(() => {
-        chats[activeChatUser].push({ sender: activeChatUser, text: "Recibido encriptado en nodo central de Plus. 🔥" });
-        localStorage.setItem('plus_chats', JSON.stringify(chats));
-        renderMessages();
-    }, 1500);
+        barraProgreso.style.transition = 'width 4s linear';
+        barraProgreso.style.width = '100%';
+    }, 50);
+
+    temporizadorHistoria = setTimeout(() => { terminarVisorHistoria(); }, 4050);
 }
 
-let callTimeout = null;
-function startCall(isVideo) {
-    if(!activeChatUser) return;
-    document.getElementById('call-screen-name').textContent = activeChatUser;
-    document.getElementById('call-screen-avatar').textContent = MOCK_USERS[activeChatUser].avatar;
-    document.getElementById('call-status').textContent = isVideo ? "Iniciando Videollamada..." : "Llamando por canal seguro...";
-    document.getElementById('btn-accept-call').style.display = 'none';
-    document.getElementById('call-overlay').style.display = 'flex';
+function terminarVisorHistoria() {
+    if(temporizadorHistoria) { clearTimeout(temporizadorHistoria); temporizadorHistoria = null; }
+    const barraProgreso = document.getElementById('story-progress-bar');
+    if(barraProgreso) { barraProgreso.style.transition = 'none'; barraProgreso.style.width = '0%'; }
+    const visor = document.getElementById('story-viewer');
+    if(visor) visor.classList.add('hidden');
+}
+
+// ==========================================
+// LÓGICA DE MENSAJERÍA
+// ==========================================
+async function abrirChatCon(targetUid, targetUsername) {
+    chatUserUidActivo = targetUid;
+    document.getElementById('chat-target-username').innerText = `@${targetUsername}`;
+    document.getElementById('chat-list-view').classList.add('hidden');
+    document.getElementById('chat-active-view').classList.remove('hidden');
+
+    const chatIdCombinado = [currentUser.uid, targetUid].sort().join("_");
+    const qMensajes = query(collection(db, "direct_messages"), where("chatId", "==", chatIdCombinado), orderBy("timestamp", "asc"));
     
-    callTimeout = setTimeout(() => {
-        document.getElementById('call-status').textContent = "Conectado // Audio HD";
-    }, 2500);
+    if(desubscribirChatMensajes) desubscribirChatMensajes();
+    const boxMensajes = document.getElementById('chat-messages-container');
+    boxMensajes.innerHTML = "<p style='color:var(--texto-gris); text-align:center;'>Cargando chat...</p>";
+
+    desubscribirChatMensajes = onSnapshot(qMensajes, (snapshot) => {
+        let html = "";
+        snapshot.forEach(doc => {
+            const msg = doc.data();
+            const esMio = msg.senderUid === currentUser.uid;
+            html += `<div class="chat-bubble ${esMio ? 'enviado' : 'recibido'}">${msg.text}</div>`;
+        });
+        boxMensajes.innerHTML = html || "<p style='color:var(--texto-gris); text-align:center; margin:auto;'>Di hola en este chat privado 👋</p>";
+        boxMensajes.scrollTop = boxMensajes.scrollHeight;
+    });
 }
 
-function endCall() {
-    clearTimeout(callTimeout);
-    document.getElementById('call-overlay').style.display = 'none';
+function cerrarChatActivo() {
+    chatUserUidActivo = null;
+    if(desubscribirChatMensajes) { desubscribirChatMensajes(); desubscribirChatMensajes = null; }
+    document.getElementById('chat-list-view').classList.remove('hidden');
+    document.getElementById('chat-active-view').classList.add('hidden');
 }
 
-function clearSystemCache() {
-    if(confirm("¿Estás seguro de reiniciar la App Plus? Se borrarán tus publicaciones locales.")) {
-        localStorage.clear();
-        window.location.reload();
+async function enviarMensajePrivado(textoMensaje) {
+    if(!chatUserUidActivo) return;
+    const chatIdCombinado = [currentUser.uid, chatUserUidActivo].sort().join("_");
+    try {
+        await addDoc(collection(db, "direct_messages"), { chatId: chatIdCombinado, senderUid: currentUser.uid, text: textoMensaje, timestamp: serverTimestamp() });
+    } catch(e) { console.error("Error:", e); }
+}
+
+// ==========================================
+// INTERACCIONES GENERALES (LIKE, SEGUIR, COMENTAR)
+// ==========================================
+function buscarUsuarios() {
+    const queryStr = document.getElementById('input-busqueda').value.toLowerCase();
+    const contenedor = document.getElementById('resultados-busqueda');
+    if(queryStr.length === 0) { contenedor.innerHTML = "Busca amigos o creadores..."; return; }
+    const resultados = usuariosGlobales.filter(u => u.username.toLowerCase().includes(queryStr) && u.uid !== currentUser.uid);
+    if(resultados.length === 0) { contenedor.innerHTML = "<p style='color:var(--texto-gris);'>No se encontraron usuarios.</p>"; return; }
+    let html = ""; resultados.forEach(user => { html += generarHtmlUsuario(user); });
+    contenedor.innerHTML = html;
+}
+
+async function darLike(postId, ownerUid) {
+    const postRef = doc(db, "posts", postId);
+    const postSnap = await getDoc(postRef);
+    const postData = postSnap.data();
+    
+    if (postData.likes && postData.likes.includes(currentUser.uid)) {
+        await updateDoc(postRef, { likes: arrayRemove(currentUser.uid) });
+    } else {
+        await updateDoc(postRef, { likes: arrayUnion(currentUser.uid) });
+        if (ownerUid !== currentUser.uid) {
+            await addDoc(collection(db, "notifications"), { toUid: ownerUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() });
+        }
     }
 }
 
-// BÚSQUEDA INTEGRADA
-function handleSearch() {
-    const query = document.getElementById('search-input').value.toLowerCase().trim();
-    const resultsContainer = document.getElementById('search-results');
-    if (query === "") {
-        resultsContainer.innerHTML = `<p class="placeholder-text">Empieza a escribir para filtrar publicaciones o usuarios...</p>`;
+async function comentarPost(postId) {
+    const txt = prompt("Escribe tu respuesta:");
+    if (txt && txt.trim() !== "") { await updateDoc(doc(db, "posts", postId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: txt.trim() }) }); }
+}
+
+async function editarPerfil() {
+    const nuevaBio = prompt("Escribe tu nueva biografía (Máximo 100 caracteres):");
+    if (nuevaBio !== null) { await updateDoc(doc(db, "users", currentUser.uid), { bio: nuevaBio.substring(0, 100) }); }
+}
+
+// INTERRUPTOR DINÁMICO SEGUIR / DEJAR DE SEGUIR
+async function toggleSeguirUsuario(uidParaSeguir) {
+    if(!currentUser || !datosMiPerfilGlobal) return;
+    const miRef = doc(db, "users", currentUser.uid);
+    const otroRef = doc(db, "users", uidParaSeguir);
+    const yaLoSigo = datosMiPerfilGlobal.following?.includes(uidParaSeguir);
+
+    try {
+        if (yaLoSigo) {
+            await updateDoc(miRef, { following: arrayRemove(uidParaSeguir) });
+            await updateDoc(otroRef, { followersCount: increment(-1) });
+        } else {
+            await updateDoc(miRef, { following: arrayUnion(uidParaSeguir) });
+            await updateDoc(otroRef, { followersCount: increment(1) });
+            await addDoc(collection(db, "notifications"), { toUid: uidParaSeguir, fromUsername: datosMiPerfilGlobal.username, type: 'follow', timestamp: serverTimestamp() });
+        }
+    } catch (e) { console.error("Error al mutar seguimiento:", e); }
+}
+
+// ==========================================
+// MOTOR DE ARRANQUE Y TIEMPO REAL
+// ==========================================
+onAuthStateChanged(auth, (user) => {
+    if (user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); } else { currentUser = null; mostrarLogin(); }
+});
+
+async function registrarUsuario(email, password, username) {
+    try {
+        const cred = await createUserWithEmailAndPassword(auth, email, password);
+        await setDoc(doc(db, "users", cred.user.uid), { uid: cred.user.uid, username: username.replace(/\s+/g, '').toLowerCase(), followersCount: 0, following: [], bio: "¡Hola! Acabo de unirme a plus." });
+        alert("¡Cuenta creada!");
+    } catch (e) { alert("Error: " + e.message); }
+}
+
+async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch (e) { alert("Credenciales incorrectas."); } }
+async function cerrarSesion() { await signOut(auth); }
+
+function activarLecturaTiempoReal() {
+    desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (snapshot) => {
+        cacheTodosLosPosts = []; 
+        snapshot.forEach(doc => cacheTodosLosPosts.push({ id: doc.id, ...doc.data() })); 
+        dibujarPosts(cacheTodosLosPosts);
+        if(perfilAjenoUidActivo) actualizarVistaPerfilAjeno(); 
+    });
+
+    desubscribirUsuarios = onSnapshot(collection(db, "users"), async (snapshot) => {
+        usuariosGlobales = []; snapshot.forEach(doc => usuariosGlobales.push(doc.data()));
+        
+        const miDocRef = doc(db, "users", currentUser.uid);
+        const miDoc = await getDoc(miDocRef);
+        
+        if (miDoc.exists()) {
+            datosMiPerfilGlobal = miDoc.data();
+        } else {
+            let nombreFallback = currentUser.email ? currentUser.email.split('@')[0] : "usuario" + Math.floor(Math.random() * 1000);
+            datosMiPerfilGlobal = { 
+                uid: currentUser.uid, 
+                username: nombreFallback, 
+                followersCount: 0, 
+                following: [], 
+                bio: "¡Hola! Acabo de unirme a plus." 
+            };
+            await setDoc(miDocRef, datosMiPerfilGlobal);
+        }
+
+        dibujarUsuarios(); dibujarMiPerfil(); buscarUsuarios(); 
+        if(perfilAjenoUidActivo) actualizarVistaPerfilAjeno();
+    });
+
+    desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (snapshot) => {
+        const notifs = []; snapshot.forEach(doc => notifs.push(doc.data())); dibujarNotificaciones(notifs);
+    });
+
+    desubscribirStories = onSnapshot(query(collection(db, "stories"), orderBy("timestamp", "desc")), (snapshot) => {
+        const stories = []; snapshot.forEach(doc => stories.push(doc.data())); dibujarHistoriasBarra(stories);
+    });
+}
+
+async function crearPublicacion(texto) {
+    if (!datosMiPerfilGlobal) {
+        alert("Cargando tu perfil, por favor espera un segundo e intenta de nuevo...");
         return;
     }
-    const filtered = posts.filter(post => post.name.toLowerCase().includes(query) || post.text.toLowerCase().includes(query));
-    renderFeed(filtered, 'search-results');
+    
+    try { 
+        await addDoc(collection(db, "posts"), { 
+            text: texto, 
+            uid: currentUser.uid, 
+            username: datosMiPerfilGlobal.username, 
+            likes: [], 
+            comments: [], 
+            timestamp: serverTimestamp() 
+        }); 
+        navegarA('inicio'); 
+    } catch (e) { console.error("Error:", e); }
 }
 
-function filterByHashtag(hashtag) {
-    switchTab('trends');
-    const filtered = posts.filter(post => post.text.toLowerCase().includes(hashtag.toLowerCase()));
-    const targetContainer = document.getElementById('trends-filtered-feed');
-    targetContainer.innerHTML = `<h4 style="font-size:13px; color:#38bdf8; margin: 15px 0 10px 0; text-transform:uppercase;">Pulses relacionados:</h4>`;
-    const innerFeedDiv = document.createElement('div');
-    innerFeedDiv.id = "inner-trend-feed";
-    targetContainer.appendChild(innerFeedDiv);
-    renderFeed(filtered, 'inner-trend-feed');
-}
-
-function toggleReaction(postId, type, currentContainerId) {
-    const post = posts.find(p => p.id === postId);
-    if (!post) return;
-    if (type === 'fire') {
-        if (post.userReactedFire) { post.reactions.fire--; post.userReactedFire = false; }
-        else { post.reactions.fire++; post.userReactedFire = true; }
-    } else if (type === 'heart') {
-        if (post.userReactedHeart) { post.reactions.heart--; post.userReactedHeart = false; }
-        else { post.reactions.heart++; post.userReactedHeart = true; }
-    }
-    localStorage.setItem('plus_posts', JSON.stringify(posts));
-    renderFeed(posts, 'pulse-feed');
-    renderProfileFeed(); 
-    if (currentContainerId === 'search-results') handleSearch();
-}
-function limpiarFormulario() {
-  // Usamos 'pulse-input' porque es el ID que tiene tu textarea en el HTML
-  const input = document.getElementById('pulse-input');
-  if (input) {
-    input.value = "";
-  }
-}
-async function followUser(botonPresionado) {
-    const targetUserId = botonPresionado.getAttribute("data-userid");
-    const { doc, updateDoc, arrayUnion, increment, getDoc, setDoc } = window.cloud;
-    const auth = getAuth();
-
-    if (!auth.currentUser) return alert("Inicia sesión primero");
-
-    const myRef = doc(window.db, "users", auth.currentUser.uid);
-    const targetRef = doc(window.db, "users", targetUserId);
-
-    // 1. Intentamos actualizar el contador
-    try {
-        await updateDoc(targetRef, { followersCount: increment(1) });
-    } catch (e) {
-        // 2. Si el contador no existe, lo creamos empezando en 1
-        await setDoc(targetRef, { followersCount: 1 }, { merge: true });
-    }
-
-    // 3. Guardamos quién sigue a quién
-    await updateDoc(myRef, { following: arrayUnion(targetUserId) });
-   
-    alert("¡Seguimiento exitoso!");
-}
+window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion;
+window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA;
+window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil;
+window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado;
+window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria;
+window.verPerfilUsuario = verPerfilUsuario;
