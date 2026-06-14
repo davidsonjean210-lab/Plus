@@ -244,7 +244,7 @@
         function ejecutarSubirFoto(event) { const file = event.target.files[0]; if(file) window.cambiarFotoPerfil(file); }
         
         function cerrarModalLista() { window.cerrarModalListaUI(); }
-        function mostrarSeguidores(uid) { window.verSeguidores(uid); }
+        function mostrarLista(uid, tipo) { window.abrirListaUsuarios(uid, tipo); }
     </script>
     <script type="module" src="script.js"></script>
 </body>
