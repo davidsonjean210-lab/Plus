@@ -111,17 +111,34 @@ function generarHtmlUsuario(user) {
 
 // ==========================================
 // NUEVO: SISTEMA DE SEGUIDORES
-// ==========================================
-function verSeguidores(targetUid) {
-    // Busca en la base de datos quiénes tienen este targetUid en su array "following"
-    const seguidores = usuariosGlobales.filter(u => u.following && u.following.includes(targetUid));
+function abrirListaUsuarios(targetUid, tipo) {
+    // PROTECCIÓN: Si no hay usuarios cargados, no intentes abrir el modal
+    if (!usuariosGlobales || usuariosGlobales.length === 0) {
+        console.warn("Aún no se han cargado los usuarios. Espera un momento.");
+        return; 
+    }
+
     const contenedor = document.getElementById('modal-lista-contenido');
+    const titulo = document.getElementById('modal-lista-titulo');
+    const targetUser = usuariosGlobales.find(u => u.uid === targetUid);
     
-    if(seguidores.length === 0) { 
-        contenedor.innerHTML = "<p style='color:var(--texto-gris); text-align:center; margin-top:20px;'>Aún no hay seguidores.</p>"; 
+    if (!targetUser) return;
+
+    let lista = [];
+    if (tipo === 'seguidores') {
+        titulo.innerText = "Seguidores";
+        lista = usuariosGlobales.filter(u => u.following && u.following.includes(targetUid));
+    } else {
+        titulo.innerText = "Siguiendo";
+        const idsSiguiendo = targetUser.following || [];
+        lista = usuariosGlobales.filter(u => idsSiguiendo.includes(u.uid));
+    }
+
+    if(lista.length === 0) { 
+        contenedor.innerHTML = "<p style='color:var(--texto-gris); text-align:center; margin-top:20px;'>No hay usuarios para mostrar.</p>"; 
     } else {
         let html = "";
-        seguidores.forEach(u => html += generarHtmlUsuario(u));
+        lista.forEach(u => html += generarHtmlUsuario(u));
         contenedor.innerHTML = html;
     }
     document.getElementById('modal-lista-usuarios').classList.remove('hidden');
@@ -184,9 +201,12 @@ function dibujarMiPerfil() {
             <h2 style="margin: 5px 0; font-size:24px;">@${datosMiPerfilGlobal.username}</h2>
             <p style="color: var(--texto-blanco); margin: 8px 0; font-size:15px;">${datosMiPerfilGlobal.bio || 'Sin biografía'}</p>
         </div>
-        <div class="stats-row">
-            <div class="stat-box" onclick="mostrarSeguidores('${datosMiPerfilGlobal.uid}')" style="cursor:pointer;"><span>${datosMiPerfilGlobal.followersCount || 0}</span><label>Seguidores</label></div>
-            <div class="stat-box"><span>${datosMiPerfilGlobal.following?.length || 0}</span><label>Siguiendo</label></div>
+        <div class="stats-row">        
+            <div class="stat-box" onclick="abrirListaUsuarios('${datosMiPerfilGlobal.uid}', 'seguidores')" style="cursor:pointer;"><span>${datosMiPerfilGlobal.followersCount || 0}</span><label>Seguidores</label></div>
+
+<div class="stat-box" onclick="abrirListaUsuarios('${datosMiPerfilGlobal.uid}', 'siguiendo')" style="cursor:pointer;"><span>${datosMiPerfilGlobal.following?.length || 0}</span><label>Siguiendo</label></div>
+
+
         </div>
     `;
 }
@@ -320,4 +340,5 @@ window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleS
 window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.ejecutarEliminar = eliminarPost;
 window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado;
 window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario;
-window.cambiarFotoPerfil = cambiarFotoPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI;
+window.abrirListaUsuarios = abrirListaUsuarios;
+window.cambiarFotoPerfil = cambiarFotoPerfil;  window.cerrarModalListaUI = cerrarModalListaUI;
