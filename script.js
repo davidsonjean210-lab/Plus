@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 const firebaseConfig = {
@@ -79,6 +79,11 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
         const comments = post.comments || [];
         const yaDioLike = currentUser && likes.includes(currentUser.uid);
 
+        // Botón de eliminar, solo si el post es tuyo
+        const btnEliminar = (currentUser && post.uid === currentUser.uid) 
+            ? `<button style="background:none; border:none; color:#ff4a5a; cursor:pointer; padding:0; margin-left:12px; display:flex; align-items:center;" onclick="ejecutarEliminar('${post.id}')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>` 
+            : '';
+
         let comentariosHtml = "";
         if(comments.length > 0) {
             comentariosHtml = `<div class="comment-section">`;
@@ -90,7 +95,10 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
             <div class="custom-card">
                 <div class="card-top">
                     <span style="color: var(--texto-blanco); cursor:pointer; font-weight: bold;" onclick="verPerfilDe('${post.uid}')">@${post.username || "anonimo"}</span>
-                    <span>Post</span>
+                    <div style="display:flex; align-items:center;">
+                        <span>Post</span>
+                        ${btnEliminar}
+                    </div>
                 </div>
                 <p class="card-main-text" style="font-weight:normal; font-size:15px; margin-top:8px;">${post.text}</p>
                 <div class="action-bar">
@@ -131,8 +139,31 @@ function dibujarUsuarios() {
     if (otros.length === 0) { contenedor.innerHTML = '<p>Sin recomendaciones.</p>'; return; }
     let html = ""; otros.forEach(user => { html += generarHtmlUsuario(user); });
     contenedor.innerHTML = html;
-    
     dibujarListaContactosChat(otros);
+}
+
+function dibujarTendencias() {
+    const contenedor = document.getElementById('trending-container');
+    if(!contenedor) return;
+    
+    // Ordenamos todos los posts por cantidad de likes de mayor a menor y sacamos el Top 3
+    const populares = [...cacheTodosLosPosts].sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0)).slice(0, 3);
+    
+    if(populares.length === 0) { 
+        contenedor.innerHTML = "<p style='color:var(--texto-gris); font-size:14px;'>Aún no hay tendencias globales.</p>"; 
+        return; 
+    }
+    
+    let html = "";
+    populares.forEach((post, i) => {
+        html += `
+        <div class="custom-card" style="cursor:pointer;" onclick="verPerfilDe('${post.uid}')">
+            <div class="card-top"><span>#${i + 1} · Tendencia global</span><span class="pulses-counter">${post.likes?.length || 0} likes</span></div>
+            <p class="card-main-text" style="font-weight:normal;">${post.text}</p>
+            <small style="color:var(--texto-gris); display:block; margin-top:5px;">Por @${post.username}</small>
+        </div>`;
+    });
+    contenedor.innerHTML = html;
 }
 
 function dibujarListaContactosChat(listaOtrosUsuarios) {
@@ -375,7 +406,14 @@ async function editarPerfil() {
     if (nuevaBio !== null) { await updateDoc(doc(db, "users", currentUser.uid), { bio: nuevaBio.substring(0, 100) }); }
 }
 
-// INTERRUPTOR DINÁMICO SEGUIR / DEJAR DE SEGUIR
+async function eliminarPost(postId) {
+    if(confirm("¿Deseas eliminar esta publicación de forma permanente?")) {
+        try {
+            await deleteDoc(doc(db, "posts", postId));
+        } catch(e) { console.error("Error al eliminar", e); }
+    }
+}
+
 async function toggleSeguirUsuario(uidParaSeguir) {
     if(!currentUser || !datosMiPerfilGlobal) return;
     const miRef = doc(db, "users", currentUser.uid);
@@ -417,6 +455,7 @@ function activarLecturaTiempoReal() {
         cacheTodosLosPosts = []; 
         snapshot.forEach(doc => cacheTodosLosPosts.push({ id: doc.id, ...doc.data() })); 
         dibujarPosts(cacheTodosLosPosts);
+        dibujarTendencias(); 
         if(perfilAjenoUidActivo) actualizarVistaPerfilAjeno(); 
     });
 
@@ -430,13 +469,7 @@ function activarLecturaTiempoReal() {
             datosMiPerfilGlobal = miDoc.data();
         } else {
             let nombreFallback = currentUser.email ? currentUser.email.split('@')[0] : "usuario" + Math.floor(Math.random() * 1000);
-            datosMiPerfilGlobal = { 
-                uid: currentUser.uid, 
-                username: nombreFallback, 
-                followersCount: 0, 
-                following: [], 
-                bio: "¡Hola! Acabo de unirme a plus." 
-            };
+            datosMiPerfilGlobal = { uid: currentUser.uid, username: nombreFallback, followersCount: 0, following: [], bio: "¡Hola! Acabo de unirme a plus." };
             await setDoc(miDocRef, datosMiPerfilGlobal);
         }
 
@@ -454,27 +487,12 @@ function activarLecturaTiempoReal() {
 }
 
 async function crearPublicacion(texto) {
-    if (!datosMiPerfilGlobal) {
-        alert("Cargando tu perfil, por favor espera un segundo e intenta de nuevo...");
-        return;
-    }
-    
-    try { 
-        await addDoc(collection(db, "posts"), { 
-            text: texto, 
-            uid: currentUser.uid, 
-            username: datosMiPerfilGlobal.username, 
-            likes: [], 
-            comments: [], 
-            timestamp: serverTimestamp() 
-        }); 
-        navegarA('inicio'); 
-    } catch (e) { console.error("Error:", e); }
+    if (!datosMiPerfilGlobal) { alert("Cargando tu perfil..."); return; }
+    try { await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, likes: [], comments: [], timestamp: serverTimestamp() }); navegarA('inicio'); } catch (e) { console.error("Error:", e); }
 }
 
 window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion;
 window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA;
-window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil;
+window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.ejecutarEliminar = eliminarPost;
 window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado;
-window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria;
-window.verPerfilUsuario = verPerfilUsuario;
+window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario;
