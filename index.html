@@ -29,7 +29,6 @@
         .tab-content { padding: 0 20px; }
         .hidden { display: none !important; }
 
-        /* Contenedor de Historias */
         .stories-wrapper { display: flex; gap: 12px; overflow-x: auto; padding: 15px 0; margin-bottom: 10px; border-bottom: 1px solid var(--borde-sutil); -webkit-overflow-scrolling: touch; }
         .stories-wrapper::-webkit-scrollbar { display: none; }
         
@@ -37,7 +36,6 @@
         .story-circle.create { border: 2px dashed var(--texto-gris); color: var(--texto-gris); }
         .story-username { font-size: 11px; color: var(--texto-gris); text-align: center; margin-top: 4px; max-width: 65px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        /* Visor de Historias Pantalla Completa */
         .story-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000; z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 30px; box-sizing: border-box; }
         .story-progress-container { position: absolute; top: 25px; left: 5%; width: 90%; height: 4px; background: #222; border-radius: 2px; overflow: hidden; }
         .story-progress-bar { height: 100%; width: 0%; background: var(--texto-blanco); }
@@ -50,21 +48,18 @@
         .pulses-counter { color: var(--azul-pulses); }
         .card-main-text { font-size: 16px; font-weight: bold; margin: 6px 0 0 0; color: var(--texto-blanco); }
 
-        /* Interacciones */
         .action-bar { display: flex; gap: 20px; margin-top: 12px; border-top: 1px solid var(--borde-sutil); padding-top: 10px; }
         .action-btn { background: none; border: none; color: var(--texto-gris); font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 5px; padding: 0; transition: 0.2s; }
         .action-btn:hover { color: var(--texto-blanco); }
         .action-btn.liked { color: #f91880; }
         .comment-section { background: var(--bg-principal); padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 13px; }
 
-        /* Actividad Reciente (Notificaciones) */
         .notif-container { background: var(--bg-tarjeta); border-radius: 14px; padding: 0; border: 1px solid transparent; }
         .notif-item { padding: 15px 18px; border-bottom: 1px solid var(--borde-sutil); }
         .notif-item:last-child { border-bottom: none; }
         .notif-text { font-size: 15px; color: var(--texto-blanco); font-weight: bold; margin: 0 0 6px 0; }
         .notif-time { font-size: 11px; color: var(--texto-gris); text-transform: uppercase; margin: 0; font-weight: bold; letter-spacing: 0.5px;}
 
-        /* Estilos del área de Chat */
         .chat-bubble { padding: 10px 14px; border-radius: 14px; margin-bottom: 8px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
         .chat-bubble.enviado { background: var(--azul-pulses); color: white; margin-left: auto; border-bottom-right-radius: 2px; }
         .chat-bubble.recibido { background: var(--bg-tarjeta); color: white; margin-right: auto; border-bottom-left-radius: 2px; border: 1px solid var(--borde-sutil); }
@@ -78,7 +73,8 @@
         .btn-follow-action.following { background: transparent; color: var(--texto-gris); border: 1px solid var(--borde-sutil); }
 
         .profile-card { text-align: center; padding: 25px 0; }
-        .avatar-circle { width: 80px; height: 80px; background: var(--bg-tarjeta); border: 2px solid var(--borde-sutil); border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; }
+        .avatar-circle { width: 80px; height: 80px; background: var(--bg-tarjeta); border: 2px solid var(--borde-sutil); border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        .avatar-circle img { width: 100%; height: 100%; object-fit: cover; }
         .stats-row { display: flex; justify-content: space-around; margin-top: 20px; background: var(--bg-tarjeta); padding: 15px; border-radius: 14px; }
         .stat-box span { display: block; font-size: 20px; font-weight: bold; color: var(--texto-blanco); }
         .stat-box label { color: var(--texto-gris); font-size: 12px; }
@@ -104,7 +100,7 @@
             <input type="email" id="email" class="auth-input" placeholder="Correo electrónico">
             <input type="password" id="password" class="auth-input" placeholder="Contraseña">
             <button class="btn-plus" style="margin-top: 15px;" onclick="ejecutarLogin()">Iniciar Sesión</button>
-            <button class="btn-plus-sec" onclick="ejecutarRegistro()">Crear una cuenta nueva</button>
+            <button class="btn-plus-sec" onclick="ejecutarRegistro()">Crear cuenta nueva</button>
         </div>
 
         <!-- APP PRINCIPAL -->
@@ -136,11 +132,11 @@
                 <div class="notif-container" id="notifications-container"></div>
             </div>
 
-            <!-- PESTAÑA: CHAT / MENSAJES PRIVADOS -->
+            <!-- PESTAÑA: CHAT -->
             <div id="tab-mensajes" class="tab-content hidden">
                 <div class="seccion-titulo">💬 Mensajes Privados</div>
                 <div id="chat-list-view">
-                    <p style="color: var(--texto-gris); font-size: 14px; margin-bottom: 15px;">Selecciona un miembro de la comunidad para hablar:</p>
+                    <p style="color: var(--texto-gris); font-size: 14px; margin-bottom: 15px;">Selecciona un miembro para hablar:</p>
                     <div id="chat-users-list"></div>
                 </div>
                 <div id="chat-active-view" class="hidden">
@@ -195,8 +191,22 @@
             <!-- 5. PERFIL -->
             <div id="tab-perfil" class="tab-content hidden">
                 <div id="profile-container"></div>
+                
+                <input type="file" id="input-foto-perfil" accept="image/*" style="display:none;" onchange="ejecutarSubirFoto(event)">
+                <button class="btn-plus-sec" id="btn-cambiar-foto" onclick="document.getElementById('input-foto-perfil').click()">📸 Cambiar Foto de Perfil</button>
                 <button class="btn-plus-sec" onclick="ejecutarEditarPerfil()">✏️ Editar Biografía</button>
                 <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 15px;" onclick="ejecutarLogout()">Cerrar Sesión</button>
+            </div>
+
+            <!-- MODAL LISTA DE USUARIOS (Seguidores/Siguiendo) -->
+            <div id="modal-lista-usuarios" class="story-overlay hidden" style="background: rgba(0,0,0,0.7); align-items: center; justify-content: flex-end; padding: 0; z-index: 200;">
+                <div style="background: var(--bg-principal); width: 100%; height: 60%; border-top-left-radius: 20px; border-top-right-radius: 20px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--borde-sutil); padding-bottom: 15px; margin-bottom: 15px;">
+                        <h3 id="modal-lista-titulo" style="margin: 0; font-size: 18px; color: var(--texto-blanco);">Seguidores</h3>
+                        <button onclick="cerrarModalLista()" style="background: none; border: none; color: var(--texto-blanco); font-size: 28px; cursor: pointer; line-height: 1;">×</button>
+                    </div>
+                    <div id="modal-lista-contenido" style="flex-grow: 1; overflow-y: auto;"></div>
+                </div>
             </div>
 
             <!-- NAVEGACIÓN -->
@@ -231,6 +241,10 @@
         function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
         function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
         function verPerfilDe(uid) { window.verPerfilUsuario(uid); }
+        function ejecutarSubirFoto(event) { const file = event.target.files[0]; if(file) window.cambiarFotoPerfil(file); }
+        
+        function cerrarModalLista() { window.cerrarModalListaUI(); }
+        function mostrarSeguidores(uid) { window.verSeguidores(uid); }
     </script>
     <script type="module" src="script.js"></script>
 </body>
