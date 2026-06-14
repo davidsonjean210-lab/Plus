@@ -241,7 +241,7 @@
         function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
         function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
         function verPerfilDe(uid) { window.verPerfilUsuario(uid); }
-        function ejecutarSubirFoto(event) { cotnst file = event.target.files[0]; if(file) window.cambiarFotoPerfil(file); }
+        function ejecutarSubirFoto(event) { const file = event.target.files[0]; if(file) window.cambiarFotoPerfil(file); }
         
         function cerrarModalLista() { window.cerrarModalListaUI(); }
         function mostrarSeguidores(uid) { window.verSeguidores(uid); }
