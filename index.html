@@ -46,7 +46,7 @@
         .story-overlay-close { position: absolute; top: 40px; right: 25px; background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
 
         .custom-card { background: var(--bg-tarjeta); border-radius: 14px; padding: 14px 18px; margin-bottom: 12px; border: 1px solid transparent; }
-        .card-top { display: flex; justify-content: space-between; font-size: 11px; color: var(--texto-gris); font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--texto-gris); font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
         .pulses-counter { color: var(--azul-pulses); }
         .card-main-text { font-size: 16px; font-weight: bold; margin: 6px 0 0 0; color: var(--texto-blanco); }
 
@@ -186,10 +186,8 @@
             <!-- 4. EXPLORAR -->
             <div id="tab-explorar" class="tab-content hidden">
                 <div class="seccion-titulo">🌍 Tendencias Mundiales</div>
-                <div class="custom-card">
-                    <div class="card-top"><span>1 · Deportes · En Vivo</span><span class="pulses-counter">2.4M pulses</span></div>
-                    <p class="card-main-text">#WorldCup2026 ⚽</p>
-                </div>
+                <div id="trending-container">Cargando tendencias...</div>
+                
                 <div class="seccion-titulo" style="margin-top: 25px;">👤 Personas recomendadas</div>
                 <div id="users-container">Cargando comunidad...</div>
             </div>
@@ -232,8 +230,6 @@
         function solicitarCrearHistoria() { const txt = prompt("¿Qué quieres subir a tu historia hoy? (Solo texto):"); if(txt && txt.trim()) window.crearNuevaHistoria(txt.trim()); }
         function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
         function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
-        
-        /* Trigger de Perfil de Terceros */
         function verPerfilDe(uid) { window.verPerfilUsuario(uid); }
     </script>
     <script type="module" src="script.js"></script>
