@@ -15,10 +15,7 @@
             --borde-sutil: #1e2d4a;
         }
 
-        /* FIX: display flex a block y fondo unificado */
         body { font-family: '-apple-system', BlinkMacSystemFont, sans-serif; background-color: var(--bg-principal); margin: 0; padding: 0; display: block; color: var(--texto-blanco); }
-        
-        /* FIX: max-width a 100% */
         .app-container { width: 100%; max-width: 100%; background: var(--bg-principal); min-height: 100vh; position: relative; padding-bottom: 80px; box-sizing: border-box; }
         
         .app-header { background: var(--bg-principal); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--borde-sutil); position: sticky; top: 0; z-index: 10; }
@@ -43,7 +40,6 @@
         .story-overlay-content { font-size: 24px; font-weight: bold; text-align: center; color: white; max-width: 90%; }
         .story-overlay-close { position: absolute; top: 40px; right: 25px; background: none; border: none; color: white; font-size: 24px; cursor: pointer; }
 
-        /* FIX: Sin bordes redondeados a los lados */
         .custom-card { background: var(--bg-tarjeta); border-radius: 0; padding: 14px 18px; margin-bottom: 4px; border-top: 1px solid var(--borde-sutil); border-bottom: 1px solid var(--borde-sutil); border-left: none; border-right: none; }
         
         .card-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--texto-gris); font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -62,7 +58,7 @@
         .notif-text { font-size: 15px; color: var(--texto-blanco); font-weight: bold; margin: 0 0 6px 0; }
         .notif-time { font-size: 11px; color: var(--texto-gris); text-transform: uppercase; margin: 0; font-weight: bold; letter-spacing: 0.5px;}
 
-        /* Diseño de Chat */
+        /* --- NUEVO DISEÑO DE CHAT --- */
         .chat-list-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; cursor: pointer; transition: background 0.2s; }
         .chat-list-item:hover { background: var(--bg-tarjeta); }
         .chat-list-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--borde-sutil); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
@@ -72,17 +68,21 @@
 
         .chat-active-header { display: flex; align-items: center; gap: 12px; padding: 10px 15px; border-bottom: 1px solid var(--borde-sutil); position: sticky; top: 0; background: var(--bg-principal); z-index: 5; }
         .chat-back-btn { background: none; border: none; color: var(--texto-blanco); font-size: 24px; cursor: pointer; padding: 0; display: flex; align-items: center; }
-        .chat-active-header-name { font-size: 16px; font-weight: bold; margin: 0; }
-        .chat-area-wrapper { display: flex; flex-direction: column; height: 68vh; }
-        .chat-messages-scroll { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
-        .chat-input-wrapper { display: flex; align-items: center; padding: 12px 15px; background: var(--bg-principal); border-top: 1px solid var(--borde-sutil); gap: 8px; }
-        .chat-input-pill { flex-grow: 1; background: var(--bg-tarjeta); border: 1px solid var(--borde-sutil); padding: 12px 15px; border-radius: 25px; color: white; outline: none; font-size: 14px; }
-        .chat-send-btn { background: none; border: none; color: var(--azul-pulses); font-weight: bold; font-size: 15px; cursor: pointer; padding: 5px; }
-
-        .chat-bubble { padding: 10px 14px; border-radius: 18px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; width: fit-content; display: flex; flex-direction: column; }
-        .chat-bubble.enviado { background: var(--azul-pulses); color: white; margin-left: auto; border-bottom-right-radius: 4px; }
-        .chat-bubble.recibido { background: var(--bg-tarjeta); color: white; margin-right: auto; border-bottom-left-radius: 4px; border: 1px solid var(--borde-sutil); }
+        .chat-active-header-name { font-size: 16px; font-weight: bold; margin: 0; flex-grow: 1; }
+        
+        .chat-area-wrapper { display: flex; flex-direction: column; height: calc(100vh - 145px); }
+        .chat-messages-scroll { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        
+        /* Burbujas tipo Instagram */
+        .chat-bubble { padding: 10px 14px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; width: fit-content; display: flex; flex-direction: column; }
+        .chat-bubble.enviado { background: var(--azul-pulses); color: white; margin-left: auto; border-radius: 18px 18px 4px 18px; }
+        .chat-bubble.recibido { background: transparent; color: white; margin-right: auto; border-radius: 18px 18px 18px 4px; border: 1px solid var(--borde-sutil); }
         .chat-bubble img { max-width: 100%; border-radius: 10px; margin-bottom: 5px; }
+
+        /* Barra de entrada tipo píldora */
+        .chat-input-wrapper { background: var(--bg-principal); padding: 10px 15px; margin-bottom: 5px; }
+        .chat-input-pill-container { display: flex; align-items: center; background: var(--bg-tarjeta); border: 1px solid var(--borde-sutil); border-radius: 25px; padding: 5px 15px; width: 100%; box-sizing: border-box; }
+        .chat-send-btn { background: none; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
 
         .post-box { background: var(--bg-tarjeta); border-radius: 14px; padding: 15px; margin-bottom: 20px; border: 1px solid var(--borde-sutil); }
         textarea { width: 100%; padding: 10px 0; border: none; background: transparent; color: var(--texto-blanco); font-size: 18px; resize: none; outline: none; }
@@ -103,7 +103,6 @@
         .stat-box span { display: block; font-size: 20px; font-weight: bold; color: var(--texto-blanco); }
         .stat-box label { color: var(--texto-gris); font-size: 12px; }
 
-        /* FIX: max-width a 100% para ocupar barra completa */
         .bottom-nav { position: fixed; bottom: 0; width: 100%; max-width: 100%; height: 65px; background: var(--bg-principal); border-top: 1px solid var(--borde-sutil); display: flex; justify-content: space-around; align-items: center; z-index: 10; }
         
         .nav-btn { background: none; border: none; cursor: pointer; padding: 10px; }
@@ -167,15 +166,24 @@
                         <button class="chat-back-btn" onclick="regresarAListaChats()">←</button>
                         <div class="chat-list-avatar" style="width: 36px; height: 36px;" id="chat-active-avatar">👤</div>
                         <h3 class="chat-active-header-name" id="chat-target-username">@usuario</h3>
+                        <div style="display: flex; gap: 15px; color: var(--texto-blanco);">
+                            <!-- Íconos decorativos estilo Instagram -->
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><polygon points="23 7 16 12 23 17 23 7"></polygon><rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect></svg>
+                        </div>
                     </div>
                     
                     <div class="chat-area-wrapper">
                         <div id="chat-messages-container" class="chat-messages-scroll"></div>
                         <div class="chat-input-wrapper">
-                            <input type="file" id="chat-input-foto" accept="image/*" style="display:none;" onchange="ejecutarEnviarFotoChat(event)">
-                            <button class="chat-send-btn" style="color:var(--texto-gris); font-size:20px;" onclick="document.getElementById('chat-input-foto').click()">📸</button>
-                            <input type="text" id="chat-input-text" class="chat-input-pill" placeholder="Escribe algo...">
-                            <button class="chat-send-btn" onclick="ejecutarEnviarMensaje()">Enviar</button>
+                            <div class="chat-input-pill-container">
+                                <input type="file" id="chat-input-foto" accept="image/*" style="display:none;" onchange="ejecutarEnviarFotoChat(event)">
+                                <button class="chat-send-btn" style="color: var(--texto-blanco); padding: 0 10px 0 0;" onclick="document.getElementById('chat-input-foto').click()">
+                                    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" stroke-width="2" fill="none"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                                </button>
+                                <input type="text" id="chat-input-text" style="flex-grow: 1; background: transparent; border: none; color: white; outline: none; font-size: 15px; padding: 8px 10px;" placeholder="Mensaje...">
+                                <button class="chat-send-btn" style="color: var(--texto-blanco); font-weight: bold; font-size: 15px; padding: 0;" onclick="ejecutarEnviarMensaje()">Enviar</button>
+                            </div>
                         </div>
                     </div>
                 </div>
