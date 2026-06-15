@@ -27,6 +27,19 @@ let chatUserUidActivo = null;
 let temporizadorHistoria = null;
 let perfilAjenoUidActivo = null;
 
+function formatearFecha(timestamp) {
+    if (!timestamp) return "Ahora mismo";
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    const ahora = new Date();
+    const difSegundos = Math.floor((ahora - date) / 1000);
+    if (difSegundos < 60) return "Ahora mismo";
+    const difMinutos = Math.floor(difSegundos / 60);
+    if (difMinutos < 60) return `Hace ${difMinutos} min`;
+    const difHoras = Math.floor(difMinutos / 60);
+    if (difHoras < 24) return `Hace ${difHoras} h`;
+    return date.toLocaleDateString();
+}
+
 function mostrarMuro() { document.getElementById('auth-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden'); navegarA('inicio'); }
 function mostrarLogin() {
     document.getElementById('auth-screen').classList.remove('hidden'); document.getElementById('main-screen').classList.add('hidden');
@@ -40,7 +53,9 @@ function navegarA(tab) {
     tabs.forEach(t => { document.getElementById(`tab-${t}`)?.classList.add('hidden'); document.getElementById(`btn-tab-${t}`)?.classList.remove('active'); });
     document.getElementById(`tab-${tab}`).classList.remove('hidden');
     document.getElementById(`btn-tab-${tab}`)?.classList.add('active');
-    if(tab === 'mensajes') cerrarChatActivo();
+    
+    if(tab === 'notificaciones') { localStorage.setItem('lastCheckedNotif', Date.now().toString()); document.getElementById('badge-notif').classList.add('hidden'); }
+    if(tab === 'mensajes') { cerrarChatActivo(); localStorage.setItem('lastCheckedMensajes', Date.now().toString()); document.getElementById('badge-mensajes').classList.add('hidden'); }
     if(tab !== 'perfil-ajeno') perfilAjenoUidActivo = null;
 }
 
@@ -50,12 +65,10 @@ async function subirImagenPerfil(file, tipo) {
     const btn = document.getElementById(btnId);
     const originalText = btn.innerText; btn.innerText = "⏳ Subiendo...";
     try {
-        const path = tipo === 'perfil' ? 'perfiles/' : 'portadas/';
-        const storageRef = ref(storage, path + currentUser.uid + '_' + Date.now());
+        const storageRef = ref(storage, (tipo === 'perfil' ? 'perfiles/' : 'portadas/') + currentUser.uid + '_' + Date.now());
         await uploadBytes(storageRef, file);
         const url = await getDownloadURL(storageRef);
-        const updateData = tipo === 'perfil' ? { profilePic: url } : { coverPic: url };
-        await updateDoc(doc(db, "users", currentUser.uid), updateData);
+        await updateDoc(doc(db, "users", currentUser.uid), tipo === 'perfil' ? { profilePic: url } : { coverPic: url });
         btn.innerText = "✅ Listo!"; setTimeout(() => { btn.innerText = originalText; }, 2500);
     } catch(e) { console.error(e); alert("Error."); btn.innerText = originalText; }
 }
@@ -89,7 +102,7 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
             <div class="custom-card">
                 ${esRepulse}
                 <div class="card-top">
-                    <span style="color: var(--texto-blanco); cursor:pointer;" onclick="verPerfilDe('${post.uid}')">@${post.username || "anonimo"}</span>
+                    <span style="color: var(--texto-blanco); cursor:pointer;" onclick="verPerfilDe('${post.uid}')">@${post.username || "anonimo"} <span style="color:var(--texto-gris); font-size:11px; font-weight:normal; margin-left:5px;">• ${formatearFecha(post.timestamp)}</span></span>
                     ${btnEliminar}
                 </div>
                 <p class="card-main-text" style="font-weight:normal; font-size:15px; margin-top:8px;">${post.text}</p>
@@ -138,7 +151,19 @@ function dibujarTendencias() {
     document.getElementById('trending-container').innerHTML = pops.length ? pops.map((post, i) => `<div class="custom-card" onclick="verPerfilDe('${post.uid}')"><div class="card-top"><span>#${i + 1} Tendencia</span></div><p style="margin:5px 0;">${post.text}</p></div>`).join('') : "<p>No hay tendencias.</p>";
 }
 
-function dibujarListaContactosChat(lista) { document.getElementById('chat-users-list').innerHTML = lista.map(u => `<div class="custom-card" style="display:flex; justify-content:space-between; cursor:pointer;" onclick="entrarAlChat('${u.uid}', '${u.username}')"><span>@${u.username}</span><span>💬</span></div>`).join(''); }
+function dibujarListaContactosChat(lista) { 
+    document.getElementById('chat-users-list').innerHTML = lista.map(u => {
+        const avatarHtml = u.profilePic ? `<img src="${u.profilePic}" style="width:100%; height:100%; object-fit:cover;">` : `👤`;
+        return `
+        <div class="chat-list-item" onclick="entrarAlChat('${u.uid}', '${u.username}')">
+            <div class="chat-list-avatar">${avatarHtml}</div>
+            <div class="chat-list-info">
+                <p class="chat-list-name">${u.username}</p>
+                <p class="chat-list-preview">Toca para abrir el chat...</p>
+            </div>
+        </div>`;
+    }).join(''); 
+}
 
 function renderHeaderPerfil(user, isMe) {
     const avatarHtml = user.profilePic ? `<img src="${user.profilePic}">` : `<svg viewBox="0 0 24 24" width="40" height="40" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>`;
@@ -174,8 +199,12 @@ function dibujarNotificaciones(lista) {
         let icono = '👾'; let accion = 'te sigue';
         if(n.type === 'like') { icono = '🚀'; accion = 'le gustó tu pulso'; }
         if(n.type === 'repulse') { icono = '🔁'; accion = 're-pulsó tu publicación'; }
-        return `<div class="notif-item"><p class="notif-text">${icono} ${n.fromUsername} ${accion}</p></div>`;
-    }).join('') : '<p>Sin actividad.</p>';
+        if(n.type === 'message') { icono = '💬'; accion = 'te ha enviado un mensaje'; }
+        return `<div class="notif-item">
+            <p class="notif-text">${icono} ${n.fromUsername} ${accion}</p>
+            <p class="notif-time">${formatearFecha(n.timestamp)}</p>
+        </div>`;
+    }).join('') : '<p style="text-align:center; padding: 20px; color: var(--texto-gris);">Sin actividad reciente.</p>';
 }
 
 function dibujarHistoriasBarra(lista) {
@@ -190,17 +219,56 @@ function reproducirHistoria(t, u) { terminarVisorHistoria(); document.getElement
 function terminarVisorHistoria() { clearTimeout(temporizadorHistoria); const b = document.getElementById('story-progress-bar'); if(b) { b.style.transition = 'none'; b.style.width = '0%'; } document.getElementById('story-viewer')?.classList.add('hidden'); }
 
 async function abrirChatCon(tUid, tUser) {
-    chatUserUidActivo = tUid; document.getElementById('chat-target-username').innerText = `@${tUser}`; document.getElementById('chat-list-view').classList.add('hidden'); document.getElementById('chat-active-view').classList.remove('hidden');
+    chatUserUidActivo = tUid; 
+    document.getElementById('chat-target-username').innerText = `${tUser}`; 
+    const targetUserObj = usuariosGlobales.find(u => u.uid === tUid);
+    document.getElementById('chat-active-avatar').innerHTML = (targetUserObj && targetUserObj.profilePic) ? `<img src="${targetUserObj.profilePic}" style="width:100%; height:100%; object-fit:cover;">` : `👤`;
+
+    document.getElementById('chat-list-view').classList.add('hidden'); 
+    document.getElementById('chat-active-view').classList.remove('hidden');
+    
     const chatId = [currentUser.uid, tUid].sort().join("_");
     if(desubscribirChatMensajes) desubscribirChatMensajes();
     const box = document.getElementById('chat-messages-container'); box.innerHTML = "Cargando...";
+    
     desubscribirChatMensajes = onSnapshot(query(collection(db, "direct_messages"), where("chatId", "==", chatId), orderBy("timestamp", "asc")), (snap) => {
-        let h = ""; snap.forEach(d => { const m = d.data(); h += `<div class="chat-bubble ${m.senderUid === currentUser.uid ? 'enviado' : 'recibido'}">${m.text}</div>`; });
-        box.innerHTML = h || "<p>Di hola 👋</p>"; box.scrollTop = box.scrollHeight;
+        let h = ""; snap.forEach(d => { 
+            const m = d.data(); const mId = d.id;
+            const imgHtml = m.imageUrl ? `<img src="${m.imageUrl}">` : '';
+            const txtHtml = m.text ? `<span>${m.text}</span>` : '';
+            const btnBorrar = m.senderUid === currentUser.uid ? `<div style="font-size:10px; text-align:right; cursor:pointer; opacity:0.6; margin-top:4px;" onclick="ejecutarBorrarMensaje('${mId}')">Borrar</div>` : '';
+            h += `<div class="chat-bubble ${m.senderUid === currentUser.uid ? 'enviado' : 'recibido'}">${imgHtml}${txtHtml}${btnBorrar}</div>`; 
+        });
+        box.innerHTML = h || "<p style='text-align:center; color:var(--texto-gris); margin-top:20px;'>Di hola 👋</p>"; 
+        setTimeout(() => { box.scrollTop = box.scrollHeight; }, 100);
     });
 }
+
 function cerrarChatActivo() { chatUserUidActivo = null; if(desubscribirChatMensajes) desubscribirChatMensajes(); document.getElementById('chat-list-view').classList.remove('hidden'); document.getElementById('chat-active-view').classList.add('hidden'); }
-async function enviarMensajePrivado(txt) { if(chatUserUidActivo) await addDoc(collection(db, "direct_messages"), { chatId: [currentUser.uid, chatUserUidActivo].sort().join("_"), senderUid: currentUser.uid, text: txt, timestamp: serverTimestamp() }); }
+
+async function enviarMensajePrivado(txt, imgUrl = null) { 
+    if(chatUserUidActivo) {
+        await addDoc(collection(db, "direct_messages"), { chatId: [currentUser.uid, chatUserUidActivo].sort().join("_"), senderUid: currentUser.uid, text: txt, imageUrl: imgUrl, timestamp: serverTimestamp() }); 
+        await addDoc(collection(db, "notifications"), { toUid: chatUserUidActivo, fromUsername: datosMiPerfilGlobal.username, type: 'message', timestamp: serverTimestamp() });
+    } 
+}
+
+async function enviarFotoEnChat(file) {
+    if(!chatUserUidActivo || !currentUser) return;
+    const inputPill = document.getElementById('chat-input-text');
+    const oldPill = inputPill.placeholder;
+    inputPill.placeholder = "Enviando foto...";
+    try {
+        const storageRef = ref(storage, 'chat_images/' + currentUser.uid + '_' + Date.now());
+        await uploadBytes(storageRef, file);
+        const url = await getDownloadURL(storageRef);
+        await enviarMensajePrivado("", url);
+    } catch(e) { alert("Error al subir foto"); }
+    inputPill.placeholder = oldPill;
+    document.getElementById('chat-input-foto').value = "";
+}
+
+async function borrarMensajeChat(mId) { if(confirm("¿Borrar mensaje para todos?")) await deleteDoc(doc(db, "direct_messages", mId)); }
 
 function buscarUsuarios() {
     const q = document.getElementById('input-busqueda').value.toLowerCase(); const c = document.getElementById('resultados-busqueda');
@@ -209,37 +277,19 @@ function buscarUsuarios() {
     c.innerHTML = r.length ? r.map(generarHtmlUsuario).join('') : "<p>No encontrados.</p>";
 }
 
-// Interacciones y Posts
 async function darLike(pId, oUid) { const r = doc(db, "posts", pId); const s = await getDoc(r); const d = s.data(); if(d.likes?.includes(currentUser.uid)) { await updateDoc(r, { likes: arrayRemove(currentUser.uid) }); } else { await updateDoc(r, { likes: arrayUnion(currentUser.uid) }); if(oUid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: oUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() }); } }
 async function comentarPost(pId) { const t = prompt("Tu respuesta:"); if(t?.trim()) await updateDoc(doc(db, "posts", pId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: t.trim() }) }); }
 async function borrarComentario(postId, commentStr) { if(confirm("¿Borrar este comentario?")) { const cObj = JSON.parse(decodeURIComponent(commentStr)); await updateDoc(doc(db, "posts", postId), { comments: arrayRemove(cObj) }); } }
 async function editarPerfil() { const b = prompt("Nueva biografía:"); if(b) await updateDoc(doc(db, "users", currentUser.uid), { bio: b.substring(0, 100) }); }
 async function eliminarPost(pId) { if(confirm("¿Eliminar publicación?")) await deleteDoc(doc(db, "posts", pId)); }
 
-// Lógica de Re-pulse
 async function hacerRepulse(pId) {
     const postOriginal = cacheTodosLosPosts.find(p => p.id === pId);
     if (!postOriginal || !datosMiPerfilGlobal) return;
-    
     if (confirm("¿Quieres compartir (Re-pulsar) esta publicación en tu perfil?")) {
         try {
-            await addDoc(collection(db, "posts"), {
-                text: postOriginal.text,
-                imageUrl: postOriginal.imageUrl || null,
-                uid: currentUser.uid,
-                username: datosMiPerfilGlobal.username,
-                likes: [],
-                comments: [],
-                timestamp: serverTimestamp(),
-                isRepulse: true,
-                originalAuthor: postOriginal.username,
-                originalUid: postOriginal.uid,
-                originalPostId: postOriginal.id
-            });
-            
-            if(postOriginal.uid !== currentUser.uid) {
-                await addDoc(collection(db, "notifications"), { toUid: postOriginal.uid, fromUsername: datosMiPerfilGlobal.username, type: 'repulse', timestamp: serverTimestamp() });
-            }
+            await addDoc(collection(db, "posts"), { text: postOriginal.text, imageUrl: postOriginal.imageUrl || null, uid: currentUser.uid, username: datosMiPerfilGlobal.username, likes: [], comments: [], timestamp: serverTimestamp(), isRepulse: true, originalAuthor: postOriginal.username, originalUid: postOriginal.uid, originalPostId: postOriginal.id });
+            if(postOriginal.uid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: postOriginal.uid, fromUsername: datosMiPerfilGlobal.username, type: 'repulse', timestamp: serverTimestamp() });
             alert("¡Publicación compartida con éxito!");
         } catch(e) { console.error(e); alert("Error al hacer re-pulse."); }
     }
@@ -249,19 +299,12 @@ async function crearPublicacion(texto) {
     if (!datosMiPerfilGlobal) return;
     const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
     const fileInput = document.getElementById('input-post-foto');
-    const file = fileInput.files[0];
-    let imgUrl = null;
+    const file = fileInput.files[0]; let imgUrl = null;
     try {
-        if(file) {
-            const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now());
-            await uploadBytes(storageRef, file);
-            imgUrl = await getDownloadURL(storageRef);
-        }
+        if(file) { const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); await uploadBytes(storageRef, file); imgUrl = await getDownloadURL(storageRef); }
         await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, likes: [], comments: [], timestamp: serverTimestamp() });
-        document.getElementById('post-text').value = ""; fileInput.value = ""; document.getElementById('preview-post-img').style.display = 'none';
-        navegarA('inicio');
-    } catch(e) { console.error(e); alert("Error al publicar"); }
-    btn.innerText = "Publicar ahora";
+        document.getElementById('post-text').value = ""; fileInput.value = ""; document.getElementById('preview-post-img').style.display = 'none'; navegarA('inicio');
+    } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
 }
 
 async function toggleSeguirUsuario(uid) {
@@ -278,8 +321,17 @@ async function cerrarSesion() { await signOut(auth); }
 function activarLecturaTiempoReal() {
     desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
     desubscribirUsuarios = onSnapshot(collection(db, "users"), async (s) => { usuariosGlobales = s.docs.map(d => d.data()); const mD = await getDoc(doc(db, "users", currentUser.uid)); if(mD.exists()) datosMiPerfilGlobal = mD.data(); else { datosMiPerfilGlobal = { uid: currentUser.uid, username: currentUser.email.split('@')[0], followersCount: 0, following: [], bio: "Hola!" }; await setDoc(doc(db, "users", currentUser.uid), datosMiPerfilGlobal); } dibujarUsuarios(); dibujarMiPerfil(); buscarUsuarios(); actualizarMurosYFeed(); });
-    desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => dibujarNotificaciones(s.docs.map(d => d.data())));
+    
+    desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => {
+        const lista = s.docs.map(d => d.data()); dibujarNotificaciones(lista);
+        const lastCheckedNotif = parseInt(localStorage.getItem('lastCheckedNotif') || "0"); const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
+        const nuevasNotif = lista.filter(n => n.type !== 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedNotif).length;
+        const badgeNotif = document.getElementById('badge-notif'); if(nuevasNotif > 0 && document.getElementById('tab-notificaciones').classList.contains('hidden')) { badgeNotif.innerText = nuevasNotif; badgeNotif.classList.remove('hidden'); } else badgeNotif.classList.add('hidden');
+        const nuevosMensajes = lista.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
+        const badgeMensajes = document.getElementById('badge-mensajes'); if(nuevosMensajes > 0 && document.getElementById('tab-mensajes').classList.contains('hidden') && !chatUserUidActivo) { badgeMensajes.innerText = nuevosMensajes; badgeMensajes.classList.remove('hidden'); } else badgeMensajes.classList.add('hidden');
+    });
+    
     desubscribirStories = onSnapshot(query(collection(db, "stories"), orderBy("timestamp", "desc")), (s) => dibujarHistoriasBarra(s.docs.map(d => d.data())));
 }
 
-window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse;
+window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse;
