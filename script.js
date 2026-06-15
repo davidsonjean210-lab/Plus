@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, getDocs, setDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
@@ -21,7 +21,7 @@ let currentUser = null;
 let datosMiPerfilGlobal = null;
 let usuariosGlobales = [];
 let cacheTodosLosPosts = [];
-let notificacionesGlobales = []; // Nuevo arreglo global para cruzar la bandeja de mensajes
+let notificacionesGlobales = [];
 
 let desubscribirPosts = null, desubscribirUsuarios = null, desubscribirNotif = null, desubscribirChatMensajes = null, desubscribirStories = null;
 
@@ -48,6 +48,12 @@ function mostrarLogin() {
     if(desubscribirPosts) desubscribirPosts(); if(desubscribirUsuarios) desubscribirUsuarios();
     if(desubscribirNotif) desubscribirNotif(); if(desubscribirStories) desubscribirStories();
     cerrarChatActivo(); terminarVisorHistoria();
+    
+    // LIMPIEZA DE CACHÉ
+    datosMiPerfilGlobal = null;
+    usuariosGlobales = [];
+    cacheTodosLosPosts = [];
+    notificacionesGlobales = [];
 }
 
 function navegarA(tab) {
@@ -61,7 +67,7 @@ function navegarA(tab) {
         cerrarChatActivo(); 
         localStorage.setItem('lastCheckedMensajes', Date.now().toString()); 
         document.getElementById('badge-mensajes').classList.add('hidden'); 
-        dibujarListaContactosChat(usuariosGlobales.filter(u => u.uid !== currentUser.uid)); // Refrescar para quitar puntos rojos
+        dibujarListaContactosChat(usuariosGlobales.filter(u => u.uid !== currentUser.uid));
     }
     if(tab !== 'perfil-ajeno') perfilAjenoUidActivo = null;
 }
@@ -158,18 +164,15 @@ function dibujarTendencias() {
     document.getElementById('trending-container').innerHTML = pops.length ? pops.map((post, i) => `<div class="custom-card" onclick="verPerfilDe('${post.uid}')"><div class="card-top"><span>#${i + 1} Tendencia</span></div><p style="margin:5px 0;">${post.text}</p></div>`).join('') : "<p>No hay tendencias.</p>";
 }
 
-// NUEVA BANDEJA DE ENTRADA INTELIGENTE
 function dibujarListaContactosChat(lista) { 
     if(!currentUser) return;
     
-    // Cruzar la lista de usuarios con sus últimos mensajes enviados a nosotros
     let contactos = lista.map(u => {
         const msgs = notificacionesGlobales.filter(n => n.type === 'message' && n.fromUsername === u.username);
         const lastMsg = msgs.sort((a,b) => (b.timestamp?.toMillis()||0) - (a.timestamp?.toMillis()||0))[0];
         return { ...u, lastMsg };
     });
 
-    // Ordenar los chats para que los que tienen mensajes recientes aparezcan arriba
     contactos.sort((a, b) => {
         const timeA = a.lastMsg ? (a.lastMsg.timestamp?.toMillis()||0) : 0;
         const timeB = b.lastMsg ? (b.lastMsg.timestamp?.toMillis()||0) : 0;
@@ -181,12 +184,10 @@ function dibujarListaContactosChat(lista) {
         let prevText = "Toca para abrir el chat...";
         let unreadDot = "";
         
-        // Si hay un mensaje, extraer la previsualización y calcular si es nuevo
         if (u.lastMsg) {
             prevText = u.lastMsg.text || "Nuevo mensaje";
             const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
             
-            // Si el mensaje es posterior a la última vez que abrimos los mensajes, es nuevo
             if (u.lastMsg.timestamp && u.lastMsg.timestamp.toMillis() > lastCheckedMensajes) {
                 unreadDot = `<span style="background:#ff4a5a; width:10px; height:10px; border-radius:50%; display:inline-block; margin-left:5px;"></span>`;
                 prevText = `<span style="color:var(--texto-blanco); font-weight:bold;">${prevText}</span>`;
@@ -214,7 +215,6 @@ function renderHeaderPerfil(user, isMe) {
     const yaLoSigo = datosMiPerfilGlobal?.following?.includes(user.uid);
     const btnSeguirHtml = !isMe ? `<button class="btn-plus ${yaLoSigo ? 'btn-plus-sec' : ''}" style="width:auto; padding:8px 24px; border-radius:20px; margin-top:10px;" onclick="ejecutarSeguir('${user.uid}')">${yaLoSigo ? 'Dejar de seguir' : 'Seguir'}</button>` : '';
     
-    // BOTÓN DINÁMICO DE MENSAJE: Solo aparece si 'yaLoSigo' es true
     const btnMensajeHtml = (!isMe && yaLoSigo) ? `<button class="btn-plus-sec" style="width:auto; padding:8px 24px; border-radius:20px; margin-top:10px; margin-left:10px;" onclick="entrarAlChat('${user.uid}', '${user.username}')">💬 Mensaje</button>` : '';
 
     return `
@@ -295,10 +295,8 @@ function cerrarChatActivo() { chatUserUidActivo = null; if(desubscribirChatMensa
 
 async function enviarMensajePrivado(txt, imgUrl = null) { 
     if(chatUserUidActivo) {
-        // Enviar al chat
         await addDoc(collection(db, "direct_messages"), { chatId: [currentUser.uid, chatUserUidActivo].sort().join("_"), senderUid: currentUser.uid, text: txt, imageUrl: imgUrl, timestamp: serverTimestamp() }); 
         
-        // Guardar la notificación enriquecida con el texto para la previsualización en la bandeja
         const previewTxt = txt ? txt.substring(0, 30) : "📷 Foto";
         await addDoc(collection(db, "notifications"), { toUid: chatUserUidActivo, fromUsername: datosMiPerfilGlobal.username, type: 'message', text: previewTxt, timestamp: serverTimestamp() });
     } 
@@ -372,34 +370,64 @@ async function toggleSeguirUsuario(uid) {
 
 onAuthStateChanged(auth, (user) => { if(user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); } else { currentUser = null; mostrarLogin(); } });
 
-// REGISTRO CON VALIDACIÓN DE DUPLICADOS
+// ==========================================================================
+// REGISTRO LIMPIO
+// ==========================================================================
 async function registrarUsuario(e, p, u) { 
     try { 
         const usernameBuscado = u.replace(/\s+/g, '').toLowerCase();
         
-        // Consultar a Firestore si ya hay alguien con ese nombre exacto
-        const q = query(collection(db, "users"), where("username", "==", usernameBuscado));
-        const snapshot = await getDocs(q);
-        
-        if(!snapshot.empty) {
-            alert("Ese nombre de usuario ya está ocupado. Por favor elige otro distinto.");
-            return; // Bloquea el proceso y no crea la cuenta
-        }
-
+        // Crear la cuenta nueva en Auth
         const c = await createUserWithEmailAndPassword(auth, e, p); 
-        await setDoc(doc(db, "users", c.user.uid), { uid: c.user.uid, username: usernameBuscado, followersCount: 0, following: [], bio: "¡Hola! Acabo de unirme a plus." }); 
-        alert("¡Cuenta creada!"); 
-    } catch(e) { alert(e.message); } 
+        
+        // Crear el documento vinculado al UID reciente
+        await setDoc(doc(db, "users", c.user.uid), { 
+            uid: c.user.uid, 
+            username: usernameBuscado, 
+            followersCount: 0, 
+            following: [], 
+            bio: "¡Hola! Acabo de unirme a plus." 
+        }); 
+        
+        alert("¡Cuenta creada con éxito!"); 
+    } catch(error) { 
+        alert("Error al registrar: " + error.message); 
+    } 
 }
 
 async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error."); } }
 async function cerrarSesion() { await signOut(auth); }
 
+// ==========================================================================
+// ELIMINACIÓN REAL Y SEGURA (EVITA USUARIOS FANTASMAS)
+// ==========================================================================
+async function eliminarMiCuenta() {
+    if (!currentUser) return;
+    if (confirm("¿Estás seguro de que quieres eliminar tu cuenta permanentemente? Perderás tu perfil y esto no se puede deshacer.")) {
+        try {
+            await deleteDoc(doc(db, "users", currentUser.uid));
+            await deleteUser(currentUser);
+            alert("Cuenta eliminada correctamente.");
+        } catch(e) {
+            alert("Error al eliminar la cuenta. Por motivos de seguridad, es posible que necesites cerrar sesión, volver a iniciarla e intentarlo de nuevo.");
+        }
+    }
+}
+
 function activarLecturaTiempoReal() {
     desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
-    desubscribirUsuarios = onSnapshot(collection(db, "users"), async (s) => { usuariosGlobales = s.docs.map(d => d.data()); const mD = await getDoc(doc(db, "users", currentUser.uid)); if(mD.exists()) datosMiPerfilGlobal = mD.data(); else { datosMiPerfilGlobal = { uid: currentUser.uid, username: currentUser.email.split('@')[0], followersCount: 0, following: [], bio: "Hola!" }; await setDoc(doc(db, "users", currentUser.uid), datosMiPerfilGlobal); } dibujarUsuarios(); dibujarMiPerfil(); buscarUsuarios(); actualizarMurosYFeed(); });
     
-    // Almacenamos la lista de notificaciones de forma global para poder extraer y cruzar las previsualizaciones de chat
+    // CORRECCIÓN: SIN ASYNC/AWAIT PARA EVITAR BUCLES INFINITOS
+    desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { 
+        usuariosGlobales = s.docs.map(d => d.data()); 
+        datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null;
+        
+        dibujarUsuarios(); 
+        dibujarMiPerfil(); 
+        buscarUsuarios(); 
+        actualizarMurosYFeed(); 
+    });
+    
     desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => {
         notificacionesGlobales = s.docs.map(d => ({ id: d.id, ...d.data() }));
         
@@ -412,11 +440,10 @@ function activarLecturaTiempoReal() {
         const nuevosMensajes = notificacionesGlobales.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
         const badgeMensajes = document.getElementById('badge-mensajes'); if(nuevosMensajes > 0 && document.getElementById('tab-mensajes').classList.contains('hidden') && !chatUserUidActivo) { badgeMensajes.innerText = nuevosMensajes; badgeMensajes.classList.remove('hidden'); } else badgeMensajes.classList.add('hidden');
 
-        // Refrescar la bandeja de entrada para mostrar al instante el texto y el punto rojo
         dibujarListaContactosChat(usuariosGlobales.filter(u => u.uid !== currentUser.uid));
     });
     
     desubscribirStories = onSnapshot(query(collection(db, "stories"), orderBy("timestamp", "desc")), (s) => dibujarHistoriasBarra(s.docs.map(d => d.data())));
 }
 
-window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse;
+window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.eliminarMiCuenta = eliminarMiCuenta;
