@@ -57,9 +57,27 @@
         .notif-text { font-size: 15px; color: var(--texto-blanco); font-weight: bold; margin: 0 0 6px 0; }
         .notif-time { font-size: 11px; color: var(--texto-gris); text-transform: uppercase; margin: 0; font-weight: bold; letter-spacing: 0.5px;}
 
-        .chat-bubble { padding: 10px 14px; border-radius: 14px; margin-bottom: 8px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; }
-        .chat-bubble.enviado { background: var(--azul-pulses); color: white; margin-left: auto; border-bottom-right-radius: 2px; }
-        .chat-bubble.recibido { background: var(--bg-tarjeta); color: white; margin-right: auto; border-bottom-left-radius: 2px; border: 1px solid var(--borde-sutil); }
+        /* Diseño de Chat */
+        .chat-list-item { display: flex; align-items: center; gap: 12px; padding: 12px 20px; cursor: pointer; transition: background 0.2s; }
+        .chat-list-item:hover { background: var(--bg-tarjeta); }
+        .chat-list-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; background: var(--borde-sutil); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 20px; overflow: hidden; }
+        .chat-list-info { flex-grow: 1; border-bottom: 1px solid var(--borde-sutil); padding-bottom: 12px; }
+        .chat-list-name { font-size: 15px; font-weight: bold; color: var(--texto-blanco); margin: 0 0 4px 0; }
+        .chat-list-preview { font-size: 13px; color: var(--texto-gris); margin: 0; }
+
+        .chat-active-header { display: flex; align-items: center; gap: 12px; padding: 10px 15px; border-bottom: 1px solid var(--borde-sutil); position: sticky; top: 0; background: var(--bg-principal); z-index: 5; }
+        .chat-back-btn { background: none; border: none; color: var(--texto-blanco); font-size: 24px; cursor: pointer; padding: 0; display: flex; align-items: center; }
+        .chat-active-header-name { font-size: 16px; font-weight: bold; margin: 0; }
+        .chat-area-wrapper { display: flex; flex-direction: column; height: 68vh; }
+        .chat-messages-scroll { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
+        .chat-input-wrapper { display: flex; align-items: center; padding: 12px 15px; background: var(--bg-principal); border-top: 1px solid var(--borde-sutil); gap: 8px; }
+        .chat-input-pill { flex-grow: 1; background: var(--bg-tarjeta); border: 1px solid var(--borde-sutil); padding: 12px 15px; border-radius: 25px; color: white; outline: none; font-size: 14px; }
+        .chat-send-btn { background: none; border: none; color: var(--azul-pulses); font-weight: bold; font-size: 15px; cursor: pointer; padding: 5px; }
+
+        .chat-bubble { padding: 10px 14px; border-radius: 18px; max-width: 75%; font-size: 15px; line-height: 1.4; word-wrap: break-word; width: fit-content; display: flex; flex-direction: column; }
+        .chat-bubble.enviado { background: var(--azul-pulses); color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+        .chat-bubble.recibido { background: var(--bg-tarjeta); color: white; margin-right: auto; border-bottom-left-radius: 4px; border: 1px solid var(--borde-sutil); }
+        .chat-bubble img { max-width: 100%; border-radius: 10px; margin-bottom: 5px; }
 
         .post-box { background: var(--bg-tarjeta); border-radius: 14px; padding: 15px; margin-bottom: 20px; border: 1px solid var(--borde-sutil); }
         textarea { width: 100%; padding: 10px 0; border: none; background: transparent; color: var(--texto-blanco); font-size: 18px; resize: none; outline: none; }
@@ -108,11 +126,13 @@
             <div class="app-header">
                 <h1 class="brand-logo">plus.</h1>
                 <div class="header-icons">
-                    <button class="top-action-btn" onclick="cambiarPestaña('notificaciones')">
+                    <button class="top-action-btn" onclick="cambiarPestaña('notificaciones')" style="position: relative;">
                         <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        <span id="badge-notif" class="hidden" style="position: absolute; top: 2px; right: 2px; background: #ff4a5a; color: white; font-size: 10px; font-weight: bold; border-radius: 50%; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">0</span>
                     </button>
-                    <button class="top-action-btn" onclick="cambiarPestaña('mensajes')">
+                    <button class="top-action-btn" onclick="cambiarPestaña('mensajes')" style="position: relative;">
                         <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                        <span id="badge-mensajes" class="hidden" style="position: absolute; top: 2px; right: 2px; background: var(--azul-pulses); color: white; font-size: 10px; font-weight: bold; border-radius: 50%; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">0</span>
                     </button>
                 </div>
             </div>
@@ -129,19 +149,27 @@
                 <div class="notif-container" id="notifications-container"></div>
             </div>
 
-            <div id="tab-mensajes" class="tab-content hidden">
-                <div class="seccion-titulo">💬 Mensajes Privados</div>
+            <div id="tab-mensajes" class="tab-content hidden" style="padding: 0;">
                 <div id="chat-list-view">
-                    <p style="color: var(--texto-gris); font-size: 14px; margin-bottom: 15px;">Selecciona un miembro para hablar:</p>
+                    <div class="seccion-titulo" style="padding: 15px 20px;">💬 Mensajes</div>
                     <div id="chat-users-list"></div>
                 </div>
+                
                 <div id="chat-active-view" class="hidden">
-                    <button class="btn-plus-sec" style="margin-bottom: 15px; padding: 6px 14px; width: auto; font-size: 13px;" onclick="regresarAListaChats()">⬅️ Volver</button>
-                    <h3 id="chat-target-username" style="margin: 5px 0 15px 0; color: var(--texto-blanco); font-size: 18px;">@usuario</h3>
-                    <div id="chat-messages-container" style="height: 300px; overflow-y: auto; background: #05080d; padding: 15px; border-radius: 14px; border: 1px solid var(--borde-sutil); display: flex; flex-direction: column;"></div>
-                    <div style="display: flex; gap: 10px; margin-top: 12px; align-items: center;">
-                        <input type="text" id="chat-input-text" class="auth-input" placeholder="Escribe un mensaje..." style="margin-bottom: 0; flex-grow: 1;">
-                        <button class="btn-plus" style="width: auto; padding: 14px 22px; border-radius: 10px;" onclick="ejecutarEnviarMensaje()">Enviar</button>
+                    <div class="chat-active-header">
+                        <button class="chat-back-btn" onclick="regresarAListaChats()">←</button>
+                        <div class="chat-list-avatar" style="width: 36px; height: 36px;" id="chat-active-avatar">👤</div>
+                        <h3 class="chat-active-header-name" id="chat-target-username">@usuario</h3>
+                    </div>
+                    
+                    <div class="chat-area-wrapper">
+                        <div id="chat-messages-container" class="chat-messages-scroll"></div>
+                        <div class="chat-input-wrapper">
+                            <input type="file" id="chat-input-foto" accept="image/*" style="display:none;" onchange="ejecutarEnviarFotoChat(event)">
+                            <button class="chat-send-btn" style="color:var(--texto-gris); font-size:20px;" onclick="document.getElementById('chat-input-foto').click()">📸</button>
+                            <input type="text" id="chat-input-text" class="chat-input-pill" placeholder="Escribe algo...">
+                            <button class="chat-send-btn" onclick="ejecutarEnviarMensaje()">Enviar</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -238,6 +266,8 @@
         function entrarAlChat(uid, username) { window.abrirChatCon(uid, username); }
         function regresarAListaChats() { window.cerrarChatActivo(); }
         function ejecutarEnviarMensaje() { const inp = document.getElementById('chat-input-text'); if(!inp.value.trim()) return; window.enviarMensajePrivado(inp.value.trim()); inp.value=""; }
+        function ejecutarEnviarFotoChat(e) { const f = e.target.files[0]; if(f) window.enviarFotoEnChat(f); }
+        function ejecutarBorrarMensaje(mId) { window.borrarMensajeChat(mId); }
         function solicitarCrearHistoria() { const txt = prompt("Historia (Solo texto):"); if(txt && txt.trim()) window.crearNuevaHistoria(txt.trim()); }
         function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
         function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
