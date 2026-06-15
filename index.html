@@ -226,6 +226,7 @@
                 
                 <button class="btn-plus-sec" onclick="ejecutarEditarPerfil()">✏️ Editar Biografía</button>
                 <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 15px;" onclick="ejecutarLogout()">Cerrar Sesión</button>
+                <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 10px;" onclick="ejecutarEliminarCuenta()">🗑️ Eliminar Cuenta</button>
             </div>
 
             <div id="modal-lista-usuarios" class="story-overlay hidden" style="background: rgba(0,0,0,0.7); align-items: center; justify-content: flex-end; padding: 0; z-index: 200;">
@@ -262,6 +263,7 @@
         function ejecutarEliminar(postId) { window.eliminarPost(postId); }
         function ejecutarEliminarComentario(postId, commentStr) { window.borrarComentario(postId, commentStr); }
         function ejecutarLogout() { window.cerrarSesion(); }
+        function ejecutarEliminarCuenta() { window.eliminarMiCuenta(); }
         function cambiarPestaña(tab) { window.navegarA(tab); }
         function entrarAlChat(uid, username) { window.abrirChatCon(uid, username); }
         function regresarAListaChats() { window.cerrarChatActivo(); }
