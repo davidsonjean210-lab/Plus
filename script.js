@@ -49,7 +49,6 @@ function mostrarLogin() {
     if(desubscribirNotif) desubscribirNotif(); if(desubscribirStories) desubscribirStories();
     cerrarChatActivo(); terminarVisorHistoria();
     
-    // LIMPIEZA DE CACHÉ
     datosMiPerfilGlobal = null;
     usuariosGlobales = [];
     cacheTodosLosPosts = [];
@@ -121,7 +120,12 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
                 <p class="card-main-text" style="font-weight:normal; font-size:15px; margin-top:8px;">${post.text}</p>
                 ${imagenHtml}
                 <div class="action-bar">
-                    <button class="action-btn ${yaDioLike ? 'liked' : ''}" onclick="ejecutarLike('${post.id}', '${post.uid}')">❤️ ${likes.length}</button>
+                    <button class="action-btn ${yaDioLike ? 'liked' : ''}" onclick="ejecutarLike('${post.id}', '${post.uid}')">
+                        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="${yaDioLike ? 'currentColor' : 'none'}" style="display:inline-block; vertical-align:middle; transition: fill 0.2s;">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                        </svg>
+                        <span style="vertical-align:middle; margin-left:2px;">${likes.length}</span>
+                    </button>
                     <button class="action-btn" onclick="ejecutarComentar('${post.id}')">💬 ${comments.length}</button>
                     <button class="action-btn" onclick="ejecutarRepulse('${post.id}')" title="Compartir">🔁</button>
                 </div>
@@ -370,17 +374,10 @@ async function toggleSeguirUsuario(uid) {
 
 onAuthStateChanged(auth, (user) => { if(user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); } else { currentUser = null; mostrarLogin(); } });
 
-// ==========================================================================
-// REGISTRO LIMPIO
-// ==========================================================================
 async function registrarUsuario(e, p, u) { 
     try { 
         const usernameBuscado = u.replace(/\s+/g, '').toLowerCase();
-        
-        // Crear la cuenta nueva en Auth
         const c = await createUserWithEmailAndPassword(auth, e, p); 
-        
-        // Crear el documento vinculado al UID reciente
         await setDoc(doc(db, "users", c.user.uid), { 
             uid: c.user.uid, 
             username: usernameBuscado, 
@@ -388,7 +385,6 @@ async function registrarUsuario(e, p, u) {
             following: [], 
             bio: "¡Hola! Acabo de unirme a plus." 
         }); 
-        
         alert("¡Cuenta creada con éxito!"); 
     } catch(error) { 
         alert("Error al registrar: " + error.message); 
@@ -398,9 +394,6 @@ async function registrarUsuario(e, p, u) {
 async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error."); } }
 async function cerrarSesion() { await signOut(auth); }
 
-// ==========================================================================
-// ELIMINACIÓN REAL Y SEGURA (EVITA USUARIOS FANTASMAS)
-// ==========================================================================
 async function eliminarMiCuenta() {
     if (!currentUser) return;
     if (confirm("¿Estás seguro de que quieres eliminar tu cuenta permanentemente? Perderás tu perfil y esto no se puede deshacer.")) {
@@ -417,7 +410,6 @@ async function eliminarMiCuenta() {
 function activarLecturaTiempoReal() {
     desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
     
-    // CORRECCIÓN: SIN ASYNC/AWAIT PARA EVITAR BUCLES INFINITOS
     desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { 
         usuariosGlobales = s.docs.map(d => d.data()); 
         datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null;
