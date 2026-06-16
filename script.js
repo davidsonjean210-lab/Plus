@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, getDocs, setDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -28,18 +28,34 @@ let desubscribirPosts = null, desubscribirUsuarios = null, desubscribirNotif = n
 let chatUserUidActivo = null;
 let temporizadorHistoria = null;
 let perfilAjenoUidActivo = null;
+let modoBusquedaActual = 'usuarios';
+
+// Variables WebRTC para Llamadas
+let localStream = null;
+let remoteStream = null;
+let peerConnection = null;
+let llamadaActualId = null;
+let unsubscribeLlamadaActiva = null;
+let llamadasEntrantesUnsubscribe = null;
+const iceServers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }] };
 
 function formatearFecha(timestamp) {
-    if (!timestamp) return "Ahora mismo";
+    if (!timestamp) return "Ahora";
     const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
     const ahora = new Date();
     const difSegundos = Math.floor((ahora - date) / 1000);
-    if (difSegundos < 60) return "Ahora mismo";
+    if (difSegundos < 60) return "Ahora";
     const difMinutos = Math.floor(difSegundos / 60);
-    if (difMinutos < 60) return `Hace ${difMinutos} min`;
+    if (difMinutos < 60) return `${difMinutos} min`;
     const difHoras = Math.floor(difMinutos / 60);
-    if (difHoras < 24) return `Hace ${difHoras} h`;
+    if (difHoras < 24) return `${difHoras} h`;
     return date.toLocaleDateString();
+}
+
+function procesarTextoConHashtags(texto) {
+    if(!texto) return "";
+    const escapado = texto.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return escapado.replace(/#(\w+)/g, `<span class="hashtag" onclick="clickEnHashtag('$1', event)">#$1</span>`);
 }
 
 function mostrarMuro() { document.getElementById('auth-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden'); navegarA('inicio'); }
@@ -47,18 +63,23 @@ function mostrarLogin() {
     document.getElementById('auth-screen').classList.remove('hidden'); document.getElementById('main-screen').classList.add('hidden');
     if(desubscribirPosts) desubscribirPosts(); if(desubscribirUsuarios) desubscribirUsuarios();
     if(desubscribirNotif) desubscribirNotif(); if(desubscribirStories) desubscribirStories();
-    cerrarChatActivo(); terminarVisorHistoria();
+    if(llamadasEntrantesUnsubscribe) llamadasEntrantesUnsubscribe();
+    cerrarChatActivo(); terminarVisorHistoria(); finalizarLlamada();
     
-    datosMiPerfilGlobal = null;
-    usuariosGlobales = [];
-    cacheTodosLosPosts = [];
-    notificacionesGlobales = [];
+    datosMiPerfilGlobal = null; usuariosGlobales = []; cacheTodosLosPosts = []; notificacionesGlobales = [];
 }
 
 function navegarA(tab) {
     const tabs = ['inicio', 'buscar', 'publicar', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno'];
     tabs.forEach(t => { document.getElementById(`tab-${t}`)?.classList.add('hidden'); document.getElementById(`btn-tab-${t}`)?.classList.remove('active'); });
-    document.getElementById(`tab-${tab}`).classList.remove('hidden');
+    
+    const targetTab = document.getElementById(`tab-${tab}`);
+    targetTab.classList.remove('hidden');
+    
+    targetTab.style.animation = 'none';
+    targetTab.offsetHeight; 
+    targetTab.style.animation = null; 
+
     document.getElementById(`btn-tab-${tab}`)?.classList.add('active');
     
     if(tab === 'notificaciones') { localStorage.setItem('lastCheckedNotif', Date.now().toString()); document.getElementById('badge-notif').classList.add('hidden'); }
@@ -66,7 +87,7 @@ function navegarA(tab) {
         cerrarChatActivo(); 
         localStorage.setItem('lastCheckedMensajes', Date.now().toString()); 
         document.getElementById('badge-mensajes').classList.add('hidden'); 
-        dibujarListaContactosChat(usuariosGlobales.filter(u => u.uid !== currentUser.uid));
+        actualizarMurosYFeed();
     }
     if(tab !== 'perfil-ajeno') perfilAjenoUidActivo = null;
 }
@@ -88,12 +109,15 @@ async function subirImagenPerfil(file, tipo) {
 function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
     const contenedor = document.getElementById(contenedorId);
     if (!contenedor) return;
-    if (listaDePosts.length === 0) { contenedor.innerHTML = '<p style="color:var(--texto-gris); text-align:center;">No hay publicaciones.</p>'; return; }
+    if (listaDePosts.length === 0) { contenedor.innerHTML = '<p style="color:var(--texto-gris); text-align:center; padding: 20px;">No hay publicaciones aquí.</p>'; return; }
+    
     let html = "";
     listaDePosts.forEach(post => {
         const likes = post.likes || []; const comments = post.comments || [];
         const yaDioLike = currentUser && likes.includes(currentUser.uid);
+        
         const btnEliminar = (currentUser && post.uid === currentUser.uid) ? `<button style="background:none; border:none; color:#ff4a5a; cursor:pointer;" onclick="ejecutarEliminar('${post.id}')">🗑️</button>` : '';
+        const btnReportar = (currentUser && post.uid !== currentUser.uid) ? `<button style="background:none; border:none; color:var(--texto-gris); cursor:pointer; font-size:18px; font-weight:bold; padding: 0 5px;" onclick="ejecutarReportar('${post.id}')" title="Reportar publicación">⋮</button>` : '';
 
         let comentariosHtml = "";
         if(comments.length > 0) {
@@ -115,9 +139,9 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
                 ${esRepulse}
                 <div class="card-top">
                     <span style="color: var(--texto-blanco); cursor:pointer;" onclick="verPerfilDe('${post.uid}')">@${post.username || "anonimo"} <span style="color:var(--texto-gris); font-size:11px; font-weight:normal; margin-left:5px;">• ${formatearFecha(post.timestamp)}</span></span>
-                    ${btnEliminar}
+                    <div>${btnEliminar}${btnReportar}</div>
                 </div>
-                <p class="card-main-text" style="font-weight:normal; font-size:15px; margin-top:8px;">${post.text}</p>
+                <p class="card-main-text">${procesarTextoConHashtags(post.text)}</p>
                 ${imagenHtml}
                 <div class="action-bar">
                     <button class="action-btn ${yaDioLike ? 'liked' : ''}" onclick="ejecutarLike('${post.id}', '${post.uid}')">
@@ -152,20 +176,24 @@ function cerrarModalListaUI() { document.getElementById('modal-lista-usuarios').
 
 function actualizarMurosYFeed() {
     if (!datosMiPerfilGlobal || cacheTodosLosPosts.length === 0) { dibujarPosts([], 'feed-container'); return; }
+    
+    const bloqueados = datosMiPerfilGlobal.blockedUsers || [];
+    const postsLimpios = cacheTodosLosPosts.filter(p => !bloqueados.includes(p.uid));
+    
     const misSiguiendo = datosMiPerfilGlobal.following || [];
-    dibujarPosts(cacheTodosLosPosts.filter(p => p.uid === currentUser.uid || misSiguiendo.includes(p.uid)), 'feed-container');
-    dibujarTendencias(); if (perfilAjenoUidActivo) actualizarVistaPerfilAjeno();
+    dibujarPosts(postsLimpios.filter(p => p.uid === currentUser.uid || misSiguiendo.includes(p.uid)), 'feed-container');
+    
+    dibujarTendencias(postsLimpios); 
+    if (perfilAjenoUidActivo) actualizarVistaPerfilAjeno(postsLimpios);
+    
+    const otrosLimpios = usuariosGlobales.filter(u => u.uid !== currentUser.uid && !bloqueados.includes(u.uid));
+    document.getElementById('users-container').innerHTML = otrosLimpios.length ? otrosLimpios.map(generarHtmlUsuario).join('') : '<p>Sin recomendaciones.</p>';
+    dibujarListaContactosChat(otrosLimpios);
 }
 
-function dibujarUsuarios() {
-    const otros = usuariosGlobales.filter(u => u.uid !== currentUser.uid);
-    document.getElementById('users-container').innerHTML = otros.length ? otros.map(generarHtmlUsuario).join('') : '<p>Sin recomendaciones.</p>';
-    dibujarListaContactosChat(otros);
-}
-
-function dibujarTendencias() {
-    const pops = [...cacheTodosLosPosts].sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0)).slice(0, 3);
-    document.getElementById('trending-container').innerHTML = pops.length ? pops.map((post, i) => `<div class="custom-card" onclick="verPerfilDe('${post.uid}')"><div class="card-top"><span>#${i + 1} Tendencia</span></div><p style="margin:5px 0;">${post.text}</p></div>`).join('') : "<p>No hay tendencias.</p>";
+function dibujarTendencias(postsLimpios) {
+    const pops = [...postsLimpios].sort((a, b) => (b.likes?.length || 0) - (a.likes?.length || 0)).slice(0, 3);
+    document.getElementById('trending-container').innerHTML = pops.length ? pops.map((post, i) => `<div class="custom-card" onclick="verPerfilDe('${post.uid}')"><div class="card-top"><span>#${i + 1} Tendencia</span></div><p style="margin:5px 0;">${procesarTextoConHashtags(post.text)}</p></div>`).join('') : "<p>No hay tendencias.</p>";
 }
 
 function dibujarListaContactosChat(lista) { 
@@ -185,11 +213,11 @@ function dibujarListaContactosChat(lista) {
 
     document.getElementById('chat-users-list').innerHTML = contactos.map(u => {
         const avatarHtml = u.profilePic ? `<img src="${u.profilePic}" style="width:100%; height:100%; object-fit:cover;">` : `👤`;
-        let prevText = "Toca para abrir el chat...";
+        let prevText = "Toca para enviar mensaje...";
         let unreadDot = "";
         
         if (u.lastMsg) {
-            prevText = u.lastMsg.text || "Nuevo mensaje";
+            prevText = u.lastMsg.text || "📷 Nueva foto";
             const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
             
             if (u.lastMsg.timestamp && u.lastMsg.timestamp.toMillis() > lastCheckedMensajes) {
@@ -201,12 +229,12 @@ function dibujarListaContactosChat(lista) {
         return `
         <div class="chat-list-item" onclick="entrarAlChat('${u.uid}', '${u.username}')">
             <div class="chat-list-avatar">${avatarHtml}</div>
-            <div class="chat-list-info" style="border-bottom: 1px solid var(--borde-sutil); padding-bottom: 12px; flex-grow:1; display:flex; justify-content:space-between; align-items:center;">
-                <div style="flex-grow:1; overflow:hidden;">
+            <div class="chat-list-info">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
                     <p class="chat-list-name">${u.username}</p>
-                    <p class="chat-list-preview" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;">${prevText}</p>
+                    ${unreadDot}
                 </div>
-                ${unreadDot}
+                <p class="chat-list-preview" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 230px;">${prevText}</p>
             </div>
         </div>`;
     }).join(''); 
@@ -217,9 +245,9 @@ function renderHeaderPerfil(user, isMe) {
     const bannerHtml = user.coverPic ? `<img src="${user.coverPic}" class="cover-photo">` : `<div class="cover-photo"></div>`;
     
     const yaLoSigo = datosMiPerfilGlobal?.following?.includes(user.uid);
-    const btnSeguirHtml = !isMe ? `<button class="btn-plus ${yaLoSigo ? 'btn-plus-sec' : ''}" style="width:auto; padding:8px 24px; border-radius:20px; margin-top:10px;" onclick="ejecutarSeguir('${user.uid}')">${yaLoSigo ? 'Dejar de seguir' : 'Seguir'}</button>` : '';
-    
-    const btnMensajeHtml = (!isMe && yaLoSigo) ? `<button class="btn-plus-sec" style="width:auto; padding:8px 24px; border-radius:20px; margin-top:10px; margin-left:10px;" onclick="entrarAlChat('${user.uid}', '${user.username}')">💬 Mensaje</button>` : '';
+    const btnSeguirHtml = !isMe ? `<button class="btn-plus ${yaLoSigo ? 'btn-plus-sec' : ''}" style="width:auto; padding:8px 20px; border-radius:20px; margin-top:10px;" onclick="ejecutarSeguir('${user.uid}')">${yaLoSigo ? 'Siguiendo' : 'Seguir'}</button>` : '';
+    const btnMensajeHtml = (!isMe && yaLoSigo) ? `<button class="btn-plus-sec" style="width:auto; padding:8px 20px; border-radius:20px; margin-top:10px; margin-left:8px;" onclick="entrarAlChat('${user.uid}', '${user.username}')">💬 Mensaje</button>` : '';
+    const btnBloquearHtml = (!isMe) ? `<button class="btn-plus-sec" style="width:auto; padding:8px 15px; border-radius:20px; margin-top:10px; margin-left:8px; border-color: #ff4a5a; color: #ff4a5a;" onclick="ejecutarBloquear('${user.uid}')" title="Bloquear Usuario">🚫</button>` : '';
 
     return `
         <div class="profile-card-header">
@@ -227,8 +255,8 @@ function renderHeaderPerfil(user, isMe) {
             <div class="avatar-circle overlap">${avatarHtml}</div>
             <div class="profile-info">
                 <h2 style="margin:5px 0; font-size:24px;">@${user.username}</h2>
-                <p style="color:var(--texto-blanco); font-size:15px;">${user.bio || 'Sin biografía'}</p>
-                <div style="display:flex; justify-content:center;">${btnSeguirHtml} ${btnMensajeHtml}</div>
+                <p style="color:var(--texto-blanco); font-size:15px;">${procesarTextoConHashtags(user.bio || 'Sin biografía')}</p>
+                <div style="display:flex; justify-content:center; flex-wrap:wrap;">${btnSeguirHtml} ${btnMensajeHtml} ${btnBloquearHtml}</div>
             </div>
         </div>
         <div class="stats-row">
@@ -239,18 +267,37 @@ function renderHeaderPerfil(user, isMe) {
 }
 
 function dibujarMiPerfil() { if(datosMiPerfilGlobal) document.getElementById('profile-container').innerHTML = renderHeaderPerfil(datosMiPerfilGlobal, true); }
-function actualizarVistaPerfilAjeno() {
+
+function actualizarVistaPerfilAjeno(postsLimpios = null) {
     if(!perfilAjenoUidActivo) return; const u = usuariosGlobales.find(x => x.uid === perfilAjenoUidActivo);
-    if(u) { document.getElementById('user-profile-container').innerHTML = renderHeaderPerfil(u, false); dibujarPosts(cacheTodosLosPosts.filter(p => p.uid === u.uid), 'user-feed-container'); }
+    if(u) { 
+        document.getElementById('user-profile-container').innerHTML = renderHeaderPerfil(u, false); 
+        const posts = postsLimpios || cacheTodosLosPosts;
+        dibujarPosts(posts.filter(p => p.uid === u.uid), 'user-feed-container'); 
+    }
 }
-function verPerfilUsuario(uid) { if(currentUser && uid === currentUser.uid) navegarA('perfil'); else { perfilAjenoUidActivo = uid; navegarA('perfil-ajeno'); actualizarVistaPerfilAjeno(); } }
+
+function verPerfilUsuario(uid) { 
+    if(currentUser && uid === currentUser.uid) navegarA('perfil'); 
+    else { 
+        perfilAjenoUidActivo = uid; 
+        navegarA('perfil-ajeno'); 
+        actualizarMurosYFeed();
+    } 
+}
 
 function dibujarNotificaciones(lista) {
-    document.getElementById('notifications-container').innerHTML = lista.length ? lista.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)).map(n => {
+    const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
+    const listaLimpia = lista.filter(n => {
+        const remitente = usuariosGlobales.find(u => u.username === n.fromUsername);
+        return !remitente || !bloqueados.includes(remitente.uid);
+    });
+
+    document.getElementById('notifications-container').innerHTML = listaLimpia.length ? listaLimpia.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0)).map(n => {
         let icono = '👾'; let accion = 'te sigue';
         if(n.type === 'like') { icono = '🚀'; accion = 'le gustó tu pulso'; }
         if(n.type === 'repulse') { icono = '🔁'; accion = 're-pulsó tu publicación'; }
-        if(n.type === 'message') { icono = '💬'; accion = 'te ha enviado un mensaje'; }
+        if(n.type === 'message') { icono = '💬'; accion = 'te envió un mensaje'; }
         return `<div class="notif-item">
             <p class="notif-text">${icono} ${n.fromUsername} ${accion}</p>
             <p class="notif-time">${formatearFecha(n.timestamp)}</p>
@@ -261,12 +308,19 @@ function dibujarNotificaciones(lista) {
 function dibujarHistoriasBarra(lista) {
     let html = `<div><div class="story-circle create" onclick="solicitarCrearHistoria()">＋</div><div class="story-username">Tú</div></div>`;
     const limite = Date.now() - 86400000; const vistos = [];
-    lista.filter(s => (s.timestamp?.toMillis() || Date.now()) > limite).forEach(s => { if(!vistos.includes(s.uid)) { vistos.push(s.uid); html += `<div><div class="story-circle" onclick="lanzarVisorHistoria('${s.text.replace(/'/g, "\\'")}', '${s.username}')"><span style="font-size:20px;">👤</span></div><div class="story-username" onclick="verPerfilDe('${s.uid}')">@${s.username}</div></div>`; } });
+    const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
+    
+    lista.filter(s => (s.timestamp?.toMillis() || Date.now()) > limite && !bloqueados.includes(s.uid)).forEach(s => { 
+        if(!vistos.includes(s.uid)) { 
+            vistos.push(s.uid); 
+            html += `<div><div class="story-circle" onclick="lanzarVisorHistoria('${s.text.replace(/'/g, "\\'")}', '${s.username}')"><span style="font-size:20px;">👤</span></div><div class="story-username" onclick="verPerfilDe('${s.uid}')">@${s.username}</div></div>`; 
+        } 
+    });
     document.getElementById('stories-carousel-container').innerHTML = html;
 }
 
 async function crearNuevaHistoria(texto) { try { await addDoc(collection(db, "stories"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, timestamp: serverTimestamp() }); } catch(e) {} }
-function reproducirHistoria(t, u) { terminarVisorHistoria(); document.getElementById('story-viewer-username').innerText = `@${u}`; document.getElementById('story-viewer-content').innerText = t; const v = document.getElementById('story-viewer'); const b = document.getElementById('story-progress-bar'); v.classList.remove('hidden'); b.style.width = '0%'; setTimeout(() => { b.style.transition = 'width 4s linear'; b.style.width = '100%'; }, 50); temporizadorHistoria = setTimeout(terminarVisorHistoria, 4050); }
+function reproducirHistoria(t, u) { terminarVisorHistoria(); document.getElementById('story-viewer-username').innerText = `@${u}`; document.getElementById('story-viewer-content').innerHTML = procesarTextoConHashtags(t); const v = document.getElementById('story-viewer'); const b = document.getElementById('story-progress-bar'); v.classList.remove('hidden'); b.style.width = '0%'; setTimeout(() => { b.style.transition = 'width 4s linear'; b.style.width = '100%'; }, 50); temporizadorHistoria = setTimeout(terminarVisorHistoria, 4050); }
 function terminarVisorHistoria() { clearTimeout(temporizadorHistoria); const b = document.getElementById('story-progress-bar'); if(b) { b.style.transition = 'none'; b.style.width = '0%'; } document.getElementById('story-viewer')?.classList.add('hidden'); }
 
 async function abrirChatCon(tUid, tUser) {
@@ -300,7 +354,6 @@ function cerrarChatActivo() { chatUserUidActivo = null; if(desubscribirChatMensa
 async function enviarMensajePrivado(txt, imgUrl = null) { 
     if(chatUserUidActivo) {
         await addDoc(collection(db, "direct_messages"), { chatId: [currentUser.uid, chatUserUidActivo].sort().join("_"), senderUid: currentUser.uid, text: txt, imageUrl: imgUrl, timestamp: serverTimestamp() }); 
-        
         const previewTxt = txt ? txt.substring(0, 30) : "📷 Foto";
         await addDoc(collection(db, "notifications"), { toUid: chatUserUidActivo, fromUsername: datosMiPerfilGlobal.username, type: 'message', text: previewTxt, timestamp: serverTimestamp() });
     } 
@@ -308,91 +361,222 @@ async function enviarMensajePrivado(txt, imgUrl = null) {
 
 async function enviarFotoEnChat(file) {
     if(!chatUserUidActivo || !currentUser) return;
-    const inputPill = document.getElementById('chat-input-text');
-    const oldPill = inputPill.placeholder;
-    inputPill.placeholder = "Enviando foto...";
-    try {
-        const storageRef = ref(storage, 'chat_images/' + currentUser.uid + '_' + Date.now());
-        await uploadBytes(storageRef, file);
-        const url = await getDownloadURL(storageRef);
-        await enviarMensajePrivado("", url);
-    } catch(e) { alert("Error al subir foto"); }
-    inputPill.placeholder = oldPill;
-    document.getElementById('chat-input-foto').value = "";
+    const inputPill = document.getElementById('chat-input-text'); const oldPill = inputPill.placeholder; inputPill.placeholder = "Enviando foto...";
+    try { const storageRef = ref(storage, 'chat_images/' + currentUser.uid + '_' + Date.now()); await uploadBytes(storageRef, file); const url = await getDownloadURL(storageRef); await enviarMensajePrivado("", url); } catch(e) { alert("Error al subir foto"); }
+    inputPill.placeholder = oldPill; document.getElementById('chat-input-foto').value = "";
 }
 
 async function borrarMensajeChat(mId) { if(confirm("¿Borrar mensaje para todos?")) await deleteDoc(doc(db, "direct_messages", mId)); }
 
-function buscarUsuarios() {
-    const q = document.getElementById('input-busqueda').value.toLowerCase(); const c = document.getElementById('resultados-busqueda');
-    if(!q) { c.innerHTML = "Busca amigos..."; return; }
-    const r = usuariosGlobales.filter(u => u.username.toLowerCase().includes(q) && u.uid !== currentUser.uid);
-    c.innerHTML = r.length ? r.map(generarHtmlUsuario).join('') : "<p>No encontrados.</p>";
-}
+// --- FUNCIONALIDAD DE LLAMADAS (WEBRTC) ---
 
-async function darLike(pId, oUid) { const r = doc(db, "posts", pId); const s = await getDoc(r); const d = s.data(); if(d.likes?.includes(currentUser.uid)) { await updateDoc(r, { likes: arrayRemove(currentUser.uid) }); } else { await updateDoc(r, { likes: arrayUnion(currentUser.uid) }); if(oUid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: oUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() }); } }
-async function comentarPost(pId) { const t = prompt("Tu respuesta:"); if(t?.trim()) await updateDoc(doc(db, "posts", pId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: t.trim() }) }); }
-async function borrarComentario(postId, commentStr) { if(confirm("¿Borrar este comentario?")) { const cObj = JSON.parse(decodeURIComponent(commentStr)); await updateDoc(doc(db, "posts", postId), { comments: arrayRemove(cObj) }); } }
-async function editarPerfil() { const b = prompt("Nueva biografía:"); if(b) await updateDoc(doc(db, "users", currentUser.uid), { bio: b.substring(0, 100) }); }
-async function eliminarPost(pId) { if(confirm("¿Eliminar publicación?")) await deleteDoc(doc(db, "posts", pId)); }
+async function iniciarLlamada(tipo) {
+    if(!chatUserUidActivo) return;
+    const isVideo = tipo === 'video';
+    
+    document.getElementById('call-overlay').classList.remove('hidden');
+    document.getElementById('call-controls-incoming').classList.add('hidden');
+    document.getElementById('call-controls-outgoing').classList.remove('hidden');
+    document.getElementById('call-user-name').innerText = document.getElementById('chat-target-username').innerText;
+    document.getElementById('call-status').innerText = 'Llamando...';
 
-async function hacerRepulse(pId) {
-    const postOriginal = cacheTodosLosPosts.find(p => p.id === pId);
-    if (!postOriginal || !datosMiPerfilGlobal) return;
-    if (confirm("¿Quieres compartir (Re-pulsar) esta publicación en tu perfil?")) {
-        try {
-            await addDoc(collection(db, "posts"), { text: postOriginal.text, imageUrl: postOriginal.imageUrl || null, uid: currentUser.uid, username: datosMiPerfilGlobal.username, likes: [], comments: [], timestamp: serverTimestamp(), isRepulse: true, originalAuthor: postOriginal.username, originalUid: postOriginal.uid, originalPostId: postOriginal.id });
-            if(postOriginal.uid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: postOriginal.uid, fromUsername: datosMiPerfilGlobal.username, type: 'repulse', timestamp: serverTimestamp() });
-            alert("¡Publicación compartida con éxito!");
-        } catch(e) { console.error(e); alert("Error al hacer re-pulse."); }
-    }
-}
-
-async function crearPublicacion(texto) {
-    if (!datosMiPerfilGlobal) return;
-    const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
-    const fileInput = document.getElementById('input-post-foto');
-    const file = fileInput.files[0]; let imgUrl = null;
     try {
-        if(file) { const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); await uploadBytes(storageRef, file); imgUrl = await getDownloadURL(storageRef); }
-        await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, likes: [], comments: [], timestamp: serverTimestamp() });
-        document.getElementById('post-text').value = ""; fileInput.value = ""; document.getElementById('preview-post-img').style.display = 'none'; navegarA('inicio');
-    } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
-}
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        remoteStream = new MediaStream();
+        document.getElementById('local-video').srcObject = localStream;
+        document.getElementById('remote-video').srcObject = remoteStream;
 
-async function toggleSeguirUsuario(uid) {
-    if(!datosMiPerfilGlobal) return; const mR = doc(db, "users", currentUser.uid); const oR = doc(db, "users", uid);
-    if(datosMiPerfilGlobal.following?.includes(uid)) { 
-        await updateDoc(mR, { following: arrayRemove(uid) }); 
-        await updateDoc(oR, { followersCount: increment(-1) }); 
-    } else { 
-        await updateDoc(mR, { following: arrayUnion(uid) }); 
-        await updateDoc(oR, { followersCount: increment(1) }); 
-        await addDoc(collection(db, "notifications"), { toUid: uid, fromUsername: datosMiPerfilGlobal.username, type: 'follow', timestamp: serverTimestamp() }); 
+        peerConnection = new RTCPeerConnection(iceServers);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
+
+        const callDoc = doc(collection(db, "calls"));
+        llamadaActualId = callDoc.id;
+        const offerCandidates = collection(callDoc, "offerCandidates");
+        const answerCandidates = collection(callDoc, "answerCandidates");
+
+        peerConnection.onicecandidate = (event) => { event.candidate && addDoc(offerCandidates, event.candidate.toJSON()); };
+
+        const offerDescription = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offerDescription);
+
+        const offer = { sdp: offerDescription.sdp, type: offerDescription.type };
+        await setDoc(callDoc, { offer, caller: currentUser.uid, callee: chatUserUidActivo, type: tipo, status: 'calling' });
+
+        unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => {
+            const data = snapshot.data();
+            if(!data || data.status === 'ended' || data.status === 'rejected') { finalizarLlamada(); return; }
+            if (!peerConnection.currentRemoteDescription && data?.answer) {
+                const answerDescription = new RTCSessionDescription(data.answer);
+                peerConnection.setRemoteDescription(answerDescription);
+                document.getElementById('call-status').innerText = 'Conectado ⏱️';
+            }
+        });
+
+        onSnapshot(answerCandidates, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+            });
+        });
+    } catch (e) {
+        alert("Necesitas dar permisos de cámara y micrófono.");
+        finalizarLlamada();
     }
 }
 
-onAuthStateChanged(auth, (user) => { if(user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); } else { currentUser = null; mostrarLogin(); } });
-
-async function registrarUsuario(e, p, u) { 
-    try { 
-        const usernameBuscado = u.replace(/\s+/g, '').toLowerCase();
-        const c = await createUserWithEmailAndPassword(auth, e, p); 
-        await setDoc(doc(db, "users", c.user.uid), { 
-            uid: c.user.uid, 
-            username: usernameBuscado, 
-            followersCount: 0, 
-            following: [], 
-            bio: "¡Hola! Acabo de unirme a plus." 
-        }); 
-        alert("¡Cuenta creada con éxito!"); 
-    } catch(error) { 
-        alert("Error al registrar: " + error.message); 
-    } 
+function escucharLlamadasEntrantes() {
+    if(!currentUser) return;
+    if(llamadasEntrantesUnsubscribe) llamadasEntrantesUnsubscribe();
+    llamadasEntrantesUnsubscribe = onSnapshot(query(collection(db, "calls"), where("callee", "==", currentUser.uid), where("status", "==", "calling")), (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+                const callData = change.doc.data();
+                llamadaActualId = change.doc.id;
+                document.getElementById('call-overlay').classList.remove('hidden');
+                document.getElementById('call-controls-incoming').classList.remove('hidden');
+                document.getElementById('call-controls-outgoing').classList.add('hidden');
+                
+                const callerObj = usuariosGlobales.find(u => u.uid === callData.caller);
+                document.getElementById('call-user-name').innerText = callerObj ? callerObj.username : 'Usuario';
+                document.getElementById('call-status').innerText = callData.type === 'video' ? 'Videollamada entrante...' : 'Llamada de voz entrante...';
+            }
+        });
+    });
 }
 
-async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error."); } }
-async function cerrarSesion() { await signOut(auth); }
+async function responderLlamada() {
+    document.getElementById('call-controls-incoming').classList.add('hidden');
+    document.getElementById('call-controls-outgoing').classList.remove('hidden');
+    document.getElementById('call-status').innerText = 'Conectando...';
+
+    const callDoc = doc(db, "calls", llamadaActualId);
+    const callData = (await getDoc(callDoc)).data();
+    const isVideo = callData.type === 'video';
+
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
+        remoteStream = new MediaStream();
+        document.getElementById('local-video').srcObject = localStream;
+        document.getElementById('remote-video').srcObject = remoteStream;
+
+        peerConnection = new RTCPeerConnection(iceServers);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
+
+        const offerCandidates = collection(callDoc, "offerCandidates");
+        const answerCandidates = collection(callDoc, "answerCandidates");
+
+        peerConnection.onicecandidate = (event) => { event.candidate && addDoc(answerCandidates, event.candidate.toJSON()); };
+
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(callData.offer));
+        const answerDescription = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answerDescription);
+
+        const answer = { type: answerDescription.type, sdp: answerDescription.sdp };
+        await updateDoc(callDoc, { answer, status: 'answered' });
+        document.getElementById('call-status').innerText = 'Conectado ⏱️';
+
+        unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => {
+            if(!snapshot.exists() || snapshot.data().status === 'ended') finalizarLlamada();
+        });
+
+        onSnapshot(offerCandidates, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+            });
+        });
+    } catch(e) {
+        alert("Error al conectar dispositivos.");
+        finalizarLlamada();
+    }
+}
+
+async function finalizarLlamada() {
+    if(peerConnection) peerConnection.close();
+    if(localStream) localStream.getTracks().forEach(track => track.stop());
+    if(remoteStream) remoteStream.getTracks().forEach(track => track.stop());
+    peerConnection = null; localStream = null; remoteStream = null;
+
+    if(llamadaActualId) {
+        try { await updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }); } catch(e) {}
+    }
+    llamadaActualId = null;
+    if(unsubscribeLlamadaActiva) unsubscribeLlamadaActiva();
+    document.getElementById('call-overlay').classList.add('hidden');
+    document.getElementById('local-video').srcObject = null;
+    document.getElementById('remote-video').srcObject = null;
+}
+
+function toggleMic() {
+    if(!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if(audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        document.getElementById('btn-mic').style.background = audioTrack.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a';
+    }
+}
+
+function toggleCam() {
+    if(!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
+    if(videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        document.getElementById('btn-cam').style.background = videoTrack.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a';
+    }
+}
+
+// --- BUSQUEDA, HERRAMIENTAS Y AUTH ---
+
+function setModoBusquedaActiva(modo) {
+    modoBusquedaActual = modo;
+    document.getElementById('btn-busq-usuarios').className = modo === 'usuarios' ? 'btn-plus' : 'btn-plus-sec';
+    document.getElementById('btn-busq-tags').className = modo === 'tags' ? 'btn-plus' : 'btn-plus-sec';
+    const inp = document.getElementById('input-busqueda');
+    inp.placeholder = modo === 'usuarios' ? "Escribe un usuario..." : "Escribe un #hashtag...";
+    ejecutarBusquedaLocal();
+}
+
+function buscarTagDirecto(tag, event) {
+    if(event) event.stopPropagation();
+    navegarA('buscar');
+    setModoBusquedaActiva('tags');
+    document.getElementById('input-busqueda').value = '#' + tag;
+    ejecutarBusquedaLocal();
+}
+
+function ejecutarBusquedaLocal() {
+    const q = document.getElementById('input-busqueda').value.toLowerCase().trim(); 
+    const c = document.getElementById('resultados-busqueda');
+    if(!q) { c.innerHTML = "<p style='color:var(--texto-gris);'>Escribe algo para buscar...</p>"; return; }
+    
+    const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
+
+    if (modoBusquedaActual === 'usuarios') {
+        const qLimpio = q.replace('@','');
+        const r = usuariosGlobales.filter(u => u.username.toLowerCase().includes(qLimpio) && u.uid !== currentUser.uid && !bloqueados.includes(u.uid));
+        c.innerHTML = r.length ? r.map(generarHtmlUsuario).join('') : "<p>Usuarios no encontrados.</p>";
+    } else {
+        const tagBuscar = q.startsWith('#') ? q : '#' + q;
+        const postsLimpios = cacheTodosLosPosts.filter(p => !bloqueados.includes(p.uid));
+        const r = postsLimpios.filter(p => p.text.toLowerCase().includes(tagBuscar));
+        dibujarPosts(r, 'resultados-busqueda');
+    }
+}
+
+async function bloquearPersona(uid) {
+    if(confirm("¿Seguro que quieres bloquear a este usuario? Desaparecerán sus posts, historias y no podrá escribirte.")) {
+        await updateDoc(doc(db, "users", currentUser.uid), { blockedUsers: arrayUnion(uid) });
+        alert("Usuario bloqueado.");
+        navegarA('inicio');
+    }
+}
+
+async function reportarPublicacion(postId) {
+    if(confirm("¿Reportar esta publicación por contenido inapropiado o spam? Nuestro equipo la revisará.")) {
+        await addDoc(collection(db, "reports"), { postId: postId, reporterUid: currentUser.uid, timestamp: serverTimestamp() });
+        alert("Publicación reportada correctamente. Gracias por ayudar a mantener la comunidad segura.");
+    }
+}
 
 async function eliminarMiCuenta() {
     if (!currentUser) return;
@@ -407,35 +591,96 @@ async function eliminarMiCuenta() {
     }
 }
 
+async function darLike(pId, oUid) { const r = doc(db, "posts", pId); const s = await getDoc(r); const d = s.data(); if(d.likes?.includes(currentUser.uid)) { await updateDoc(r, { likes: arrayRemove(currentUser.uid) }); } else { await updateDoc(r, { likes: arrayUnion(currentUser.uid) }); if(oUid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: oUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() }); } }
+async function comentarPost(pId) { const t = prompt("Tu respuesta:"); if(t?.trim()) await updateDoc(doc(db, "posts", pId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: t.trim() }) }); }
+async function borrarComentario(postId, commentStr) { if(confirm("¿Borrar este comentario?")) { const cObj = JSON.parse(decodeURIComponent(commentStr)); await updateDoc(doc(db, "posts", postId), { comments: arrayRemove(cObj) }); } }
+async function editarPerfil() { const b = prompt("Nueva biografía (puedes usar #hashtags):"); if(b) await updateDoc(doc(db, "users", currentUser.uid), { bio: b.substring(0, 100) }); }
+async function eliminarPost(pId) { if(confirm("¿Eliminar publicación?")) await deleteDoc(doc(db, "posts", pId)); }
+
+async function hacerRepulse(pId) {
+    const postOriginal = cacheTodosLosPosts.find(p => p.id === pId);
+    if (!postOriginal || !datosMiPerfilGlobal) return;
+    if (confirm("¿Quieres compartir (Re-pulsar) esta publicación en tu perfil?")) {
+        try {
+            await addDoc(collection(db, "posts"), { text: postOriginal.text, imageUrl: postOriginal.imageUrl || null, uid: currentUser.uid, username: datosMiPerfilGlobal.username, likes: [], comments: [], timestamp: serverTimestamp(), isRepulse: true, originalAuthor: postOriginal.username, originalUid: postOriginal.uid, originalPostId: postOriginal.id });
+            if(postOriginal.uid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: postOriginal.uid, fromUsername: datosMiPerfilGlobal.username, type: 'repulse', timestamp: serverTimestamp() });
+            alert("¡Publicación compartida con éxito!");
+        } catch(e) { alert("Error al hacer re-pulse."); }
+    }
+}
+
+async function crearPublicacion(texto) {
+    if (!datosMiPerfilGlobal) return;
+    const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
+    const fileInput = document.getElementById('input-post-foto'); const file = fileInput.files[0]; let imgUrl = null;
+    try {
+        if(file) { const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); await uploadBytes(storageRef, file); imgUrl = await getDownloadURL(storageRef); }
+        await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, likes: [], comments: [], timestamp: serverTimestamp() });
+        document.getElementById('post-text').value = ""; fileInput.value = ""; document.getElementById('preview-post-img').style.display = 'none'; navegarA('inicio');
+    } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
+}
+
+async function toggleSeguirUsuario(uid) {
+    if(!datosMiPerfilGlobal) return; const mR = doc(db, "users", currentUser.uid); const oR = doc(db, "users", uid);
+    if(datosMiPerfilGlobal.following?.includes(uid)) { 
+        await updateDoc(mR, { following: arrayRemove(uid) }); await updateDoc(oR, { followersCount: increment(-1) }); 
+    } else { 
+        await updateDoc(mR, { following: arrayUnion(uid) }); await updateDoc(oR, { followersCount: increment(1) }); 
+        await addDoc(collection(db, "notifications"), { toUid: uid, fromUsername: datosMiPerfilGlobal.username, type: 'follow', timestamp: serverTimestamp() }); 
+    }
+}
+
+onAuthStateChanged(auth, (user) => { 
+    if(user) { 
+        currentUser = user; 
+        mostrarMuro(); 
+        activarLecturaTiempoReal();
+        escucharLlamadasEntrantes(); // Activar escucha de llamadas
+    } else { 
+        currentUser = null; 
+        mostrarLogin(); 
+    } 
+});
+
+async function registrarUsuario(e, p, u) { 
+    try { 
+        const usernameBuscado = u.replace(/\s+/g, '').toLowerCase();
+        const c = await createUserWithEmailAndPassword(auth, e, p); 
+        await setDoc(doc(db, "users", c.user.uid), { uid: c.user.uid, username: usernameBuscado, followersCount: 0, following: [], blockedUsers: [], bio: "¡Hola! Acabo de unirme a plus." }); 
+        alert("¡Cuenta creada con éxito!"); 
+    } catch(error) { alert("Error al registrar: " + error.message); } 
+}
+
+async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error al iniciar."); } }
+async function cerrarSesion() { await signOut(auth); }
+
 function activarLecturaTiempoReal() {
-    desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
+    desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); if(!document.getElementById('tab-buscar').classList.contains('hidden') && modoBusquedaActual==='tags') ejecutarBusquedaLocal(); });
     
     desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { 
         usuariosGlobales = s.docs.map(d => d.data()); 
         datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null;
-        
-        dibujarUsuarios(); 
-        dibujarMiPerfil(); 
-        buscarUsuarios(); 
-        actualizarMurosYFeed(); 
+        dibujarMiPerfil(); actualizarMurosYFeed(); 
+        if(!document.getElementById('tab-buscar').classList.contains('hidden') && modoBusquedaActual==='usuarios') ejecutarBusquedaLocal();
     });
     
     desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => {
         notificacionesGlobales = s.docs.map(d => ({ id: d.id, ...d.data() }));
-        
         dibujarNotificaciones(notificacionesGlobales);
-        const lastCheckedNotif = parseInt(localStorage.getItem('lastCheckedNotif') || "0"); const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
         
-        const nuevasNotif = notificacionesGlobales.filter(n => n.type !== 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedNotif).length;
+        const lastCheckedNotif = parseInt(localStorage.getItem('lastCheckedNotif') || "0"); const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
+        const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
+        
+        const notifValidas = notificacionesGlobales.filter(n => { const remitente = usuariosGlobales.find(u => u.username === n.fromUsername); return !remitente || !bloqueados.includes(remitente.uid); });
+
+        const nuevasNotif = notifValidas.filter(n => n.type !== 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedNotif).length;
         const badgeNotif = document.getElementById('badge-notif'); if(nuevasNotif > 0 && document.getElementById('tab-notificaciones').classList.contains('hidden')) { badgeNotif.innerText = nuevasNotif; badgeNotif.classList.remove('hidden'); } else badgeNotif.classList.add('hidden');
         
-        const nuevosMensajes = notificacionesGlobales.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
+        const nuevosMensajes = notifValidas.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
         const badgeMensajes = document.getElementById('badge-mensajes'); if(nuevosMensajes > 0 && document.getElementById('tab-mensajes').classList.contains('hidden') && !chatUserUidActivo) { badgeMensajes.innerText = nuevosMensajes; badgeMensajes.classList.remove('hidden'); } else badgeMensajes.classList.add('hidden');
-
-        dibujarListaContactosChat(usuariosGlobales.filter(u => u.uid !== currentUser.uid));
     });
     
     desubscribirStories = onSnapshot(query(collection(db, "stories"), orderBy("timestamp", "desc")), (s) => dibujarHistoriasBarra(s.docs.map(d => d.data())));
 }
 
-window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.buscarUsuarios = buscarUsuarios; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.eliminarMiCuenta = eliminarMiCuenta;
+window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.ejecutarBusquedaLocal = ejecutarBusquedaLocal; window.setModoBusquedaActiva = setModoBusquedaActiva; window.buscarTagDirecto = buscarTagDirecto; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.reportarPublicacion = reportarPublicacion; window.bloquearPersona = bloquearPersona; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.eliminarMiCuenta = eliminarMiCuenta; window.iniciarLlamada = iniciarLlamada; window.responderLlamada = responderLlamada; window.finalizarLlamada = finalizarLlamada; window.toggleMic = toggleMic; window.toggleCam = toggleCam;
