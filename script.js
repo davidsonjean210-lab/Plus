@@ -384,11 +384,22 @@ async function iniciarLlamada(tipo) {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
         remoteStream = new MediaStream();
         document.getElementById('local-video').srcObject = localStream;
-        document.getElementById('remote-video').srcObject = remoteStream;
+        
+        // --- CORRECCIONES PARA MÓVILES (PLAY/AUDIO) ---
+        const remoteVideo = document.getElementById('remote-video');
+        remoteVideo.srcObject = remoteStream;
+        remoteVideo.playsInline = true;
+        remoteVideo.autoplay = true;
+        remoteVideo.muted = false;
 
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-        peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
+        
+        peerConnection.ontrack = (event) => { 
+            event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); 
+            // Forzar reproducción al conectar track
+            remoteVideo.play().catch(e => console.log("Autoplay bloqueado", e));
+        };
 
         const callDoc = doc(collection(db, "calls"));
         llamadaActualId = callDoc.id;
@@ -410,6 +421,7 @@ async function iniciarLlamada(tipo) {
                 const answerDescription = new RTCSessionDescription(data.answer);
                 peerConnection.setRemoteDescription(answerDescription);
                 document.getElementById('call-status').innerText = 'Conectado ⏱️';
+                remoteVideo.play().catch(e=>{}); // Intentar forzar el play de nuevo al conectar
             }
         });
 
@@ -457,11 +469,21 @@ async function responderLlamada() {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
         remoteStream = new MediaStream();
         document.getElementById('local-video').srcObject = localStream;
-        document.getElementById('remote-video').srcObject = remoteStream;
+        
+        // --- CORRECCIONES PARA MÓVILES (PLAY/AUDIO) ---
+        const remoteVideo = document.getElementById('remote-video');
+        remoteVideo.srcObject = remoteStream;
+        remoteVideo.playsInline = true;
+        remoteVideo.autoplay = true;
+        remoteVideo.muted = false;
 
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-        peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
+        
+        peerConnection.ontrack = (event) => { 
+            event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); 
+            remoteVideo.play().catch(e => console.log("Autoplay bloqueado", e));
+        };
 
         const offerCandidates = collection(callDoc, "offerCandidates");
         const answerCandidates = collection(callDoc, "answerCandidates");
@@ -474,7 +496,9 @@ async function responderLlamada() {
 
         const answer = { type: answerDescription.type, sdp: answerDescription.sdp };
         await updateDoc(callDoc, { answer, status: 'answered' });
+        
         document.getElementById('call-status').innerText = 'Conectado ⏱️';
+        remoteVideo.play().catch(e=>{}); // Forzar play tras responder
 
         unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => {
             if(!snapshot.exists() || snapshot.data().status === 'ended') finalizarLlamada();
