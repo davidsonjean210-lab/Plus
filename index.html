@@ -179,6 +179,9 @@
             <div class="app-header">
                 <h1 class="brand-logo">plus.</h1>
                 <div class="header-icons">
+                    <button class="top-action-btn" onclick="cambiarPestaña('explorar')" style="position: relative;">
+                        <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                    </button>
                     <button class="top-action-btn" onclick="cambiarPestaña('notificaciones')" style="position: relative;">
                         <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         <span id="badge-notif" class="hidden" style="position: absolute; top: 2px; right: 2px; background: #ff4a5a; color: white; font-size: 10px; font-weight: bold; border-radius: 50%; min-width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 2px; box-sizing: border-box;">0</span>
@@ -232,6 +235,15 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div id="tab-videos" class="tab-content hidden" style="padding: 0; background-color: #000;">
+                <div id="videos-feed-container" style="height: calc(100vh - 130px); overflow-y: scroll; scroll-snap-type: y mandatory; position: relative;">
+                     <div style="height: 100%; width: 100%; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--texto-gris);">
+                         <svg viewBox="0 0 24 24" width="48" height="48" stroke="var(--texto-gris)" stroke-width="1.5" fill="none" style="margin-bottom: 10px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                         <p>Cargando videos cortos...</p>
+                     </div>
                 </div>
             </div>
 
@@ -309,7 +321,7 @@
                 <button class="nav-btn active" id="btn-tab-inicio" onclick="cambiarPestaña('inicio')"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></button>
                 <button class="nav-btn" id="btn-tab-buscar" onclick="cambiarPestaña('buscar')"><svg class="nav-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg></button>
                 <button class="nav-btn" id="btn-tab-publicar" onclick="cambiarPestaña('publicar')"><svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg></button>
-                <button class="nav-btn" id="btn-tab-explorar" onclick="cambiarPestaña('explorar')"><svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></button>
+                <button class="nav-btn" id="btn-tab-videos" onclick="cambiarPestaña('videos')"><svg class="nav-icon" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" ry="2"></rect><polygon points="10 8 16 12 10 16 10 8"></polygon></svg></button>
                 <button class="nav-btn" id="btn-tab-perfil" onclick="cambiarPestaña('perfil')"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></button>
             </nav>
         </div>
@@ -346,6 +358,18 @@
         function colgarLlamadaWebRTC() { window.finalizarLlamada(); }
         function alternarMicrofono() { window.toggleMic(); }
         function alternarCamara() { window.toggleCam(); }
+        
+        // Modal y Listas
+        function cerrarModalLista() { window.cerrarModalListaUI(); }
+        function mostrarSeguidores(uid) { window.verSeguidores(uid); }
+        function mostrarSiguiendo(uid) { window.verSiguiendo(uid); }
+        
+        // Funciones extra Feed/Historias
+        function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
+        function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
+        function verPerfilDe(uid) { window.verPerfilUsuario(uid); }
+        function ejecutarRepulse(postId) { window.hacerRepulse(postId); }
+        function clickEnHashtag(tag, e) { window.buscarTagDirecto(tag, e); }
     </script>
     <script type="module" src="script.js"></script>
 </body>
