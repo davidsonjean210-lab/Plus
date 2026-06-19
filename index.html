@@ -138,10 +138,10 @@
         .btn-gray { background: rgba(51, 51, 51, 0.8); backdrop-filter: blur(5px); }
         .call-header { position: absolute; top: 40px; left: 0; width: 100%; text-align: center; color: white; z-index: 1000; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
     </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
 
-    <!-- INTERFAZ DE LLAMADAS -->
     <div id="call-overlay" class="call-overlay hidden">
         <div class="call-header">
             <h2 id="call-user-name" style="margin:0; font-size: 22px;">Llamando...</h2>
@@ -151,16 +151,14 @@
             <video id="remote-video" class="remote-video" autoplay playsinline></video>
             <video id="local-video" class="local-video" autoplay playsinline muted></video>
         </div>
-        <!-- Controles cuando tú haces la llamada o ya estás conectado -->
         <div class="call-controls" id="call-controls-outgoing">
-            <button class="call-btn btn-gray" onclick="alternarMicrofono()" id="btn-mic">🎤</button>
-            <button class="call-btn btn-gray" onclick="alternarCamara()" id="btn-cam">📷</button>
-            <button class="call-btn btn-red" onclick="colgarLlamadaWebRTC()">☎️</button>
+            <button class="call-btn btn-gray" onclick="alternarMicrofono()" id="btn-mic"><i class="fas fa-microphone"></i></button>
+            <button class="call-btn btn-gray" onclick="alternarCamara()" id="btn-cam"><i class="fas fa-video"></i></button>
+            <button class="call-btn btn-red" onclick="colgarLlamadaWebRTC()"><i class="fas fa-phone-slash"></i></button>
         </div>
-        <!-- Controles para recibir llamada entrante -->
         <div class="call-controls hidden" id="call-controls-incoming">
-            <button class="call-btn btn-red" onclick="colgarLlamadaWebRTC()">☎️</button>
-            <button class="call-btn btn-green" onclick="responderLlamadaWebRTC()">📞</button>
+            <button class="call-btn btn-red" onclick="colgarLlamadaWebRTC()"><i class="fas fa-phone-slash"></i></button>
+            <button class="call-btn btn-green" onclick="responderLlamadaWebRTC()"><i class="fas fa-phone"></i></button>
         </div>
     </div>
 
@@ -264,8 +262,8 @@
                     <textarea id="post-text" placeholder="¿Qué está pasando hoy? Usa #hashtags" style="height: 100px;"></textarea>
                     
                     <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
-                        <input type="file" id="input-post-foto" accept="image/*" style="display:none;" onchange="mostrarPreview(event)">
-                        <button class="btn-plus-sec" style="margin:0; width:auto; padding: 8px 15px; border-color: var(--azul-pulses); color: var(--azul-pulses);" onclick="document.getElementById('input-post-foto').click()">📸 Adjuntar foto</button>
+                        <input type="file" id="input-post-foto" accept="image/*,video/*" style="display:none;" onchange="mostrarPreview(event)">
+                        <button class="btn-plus-sec" style="margin:0; width:auto; padding: 8px 15px; border-color: var(--azul-pulses); color: var(--azul-pulses);" onclick="document.getElementById('input-post-foto').click()">📸 Foto/Video</button>
                         <img id="preview-post-img" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px; display: none;">
                     </div>
 
@@ -291,6 +289,7 @@
                     <button class="btn-plus-sec" id="btn-cambiar-portada" onclick="document.getElementById('input-foto-portada').click()">🎨 Portada</button>
                 </div>
                 
+                <button class="btn-plus-sec" onclick="verUsuariosBloqueados()">🚫 Ver usuarios bloqueados</button>
                 <button class="btn-plus-sec" onclick="ejecutarEditarPerfil()">✏️ Editar Biografía</button>
                 <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 15px;" onclick="ejecutarLogout()">Cerrar Sesión</button>
                 <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 10px;" onclick="ejecutarEliminarCuenta()">🗑️ Eliminar Cuenta</button>
@@ -313,14 +312,13 @@
                 <button class="nav-btn" id="btn-tab-explorar" onclick="cambiarPestaña('explorar')"><svg class="nav-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg></button>
                 <button class="nav-btn" id="btn-tab-perfil" onclick="cambiarPestaña('perfil')"><svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg></button>
             </nav>
-
         </div>
     </div>
 
     <script>
         function ejecutarRegistro() { const e=document.getElementById('email').value, p=document.getElementById('password').value, u=document.getElementById('username').value; if(!e||!p||!u) return alert("Llena todo."); window.registrarUsuario(e,p,u); }
         function ejecutarLogin() { const e=document.getElementById('email').value, p=document.getElementById('password').value; if(!e||!p) return alert("Faltan datos."); window.iniciarSesion(e,p); }
-        function ejecutarPublicar() { const c=document.getElementById('post-text'); if(!c.value.trim() && !document.getElementById('input-post-foto').files[0]) return alert("Escribe algo o añade foto."); window.crearPublicacion(c.value); }
+        function ejecutarPublicar() { const c=document.getElementById('post-text'); if(!c.value.trim() && !document.getElementById('input-post-foto').files[0]) return alert("Escribe algo o añade foto/video."); window.crearPublicacion(c.value); }
         function mostrarPreview(e) { const f = e.target.files[0]; if(f) { const img = document.getElementById('preview-post-img'); img.src = URL.createObjectURL(f); img.style.display = 'block'; } }
         function ejecutarBusqueda() { window.ejecutarBusquedaLocal(); }
         function setModoBusqueda(modo) { window.setModoBusquedaActiva(modo); }
@@ -340,17 +338,8 @@
         function ejecutarEnviarMensaje() { const inp = document.getElementById('chat-input-text'); if(!inp.value.trim()) return; window.enviarMensajePrivado(inp.value.trim()); inp.value=""; }
         function ejecutarEnviarFotoChat(e) { const f = e.target.files[0]; if(f) window.enviarFotoEnChat(f); }
         function ejecutarBorrarMensaje(mId) { window.borrarMensajeChat(mId); }
-        function solicitarCrearHistoria() { const txt = prompt("Historia (Solo texto):"); if(txt && txt.trim()) window.crearNuevaHistoria(txt.trim()); }
-        function lanzarVisorHistoria(texto, usuario) { window.reproducirHistoria(texto, usuario); }
-        function cerrarVisorHistoria() { window.terminarVisorHistoria(); }
-        function verPerfilDe(uid) { window.verPerfilUsuario(uid); }
-        function ejecutarSubirFoto(event, tipo) { const file = event.target.files[0]; if(file) window.subirImagenPerfil(file, tipo); }
-        function cerrarModalLista() { window.cerrarModalListaUI(); }
-        function mostrarSeguidores(uid) { window.verSeguidores(uid); }
-        function mostrarSiguiendo(uid) { window.verSiguiendo(uid); }
-        function ejecutarRepulse(postId) { window.hacerRepulse(postId); }
-        function clickEnHashtag(tag, e) { window.buscarTagDirecto(tag, e); }
-
+        function verUsuariosBloqueados() { window.verUsuariosBloqueados(); }
+        
         // Funciones para Llamadas WebRTC
         function iniciarLlamadaWebRTC(tipo) { window.iniciarLlamada(tipo); }
         function responderLlamadaWebRTC() { window.responderLlamada(); }
