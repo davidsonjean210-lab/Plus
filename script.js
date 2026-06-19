@@ -31,7 +31,7 @@ let perfilAjenoUidActivo = null;
 let modoBusquedaActual = 'usuarios';
 let typingTimeout = null;
 
-// Variables WebRTC y Audio
+// --- VARIABLES WEBRTC Y AUDIO ---
 let localStream = null;
 let remoteStream = null;
 let peerConnection = null;
@@ -44,14 +44,17 @@ const audioRing = new Audio('https://actions.google.com/sounds/v1/alarms/digital
 const audioDial = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
 audioRing.loop = true; audioDial.loop = true;
 
-// Crear elemento de audio oculto nativo para asegurar la salida de voz en celulares
+// Crear elemento de audio oculto nativo optimizado para móviles (Políticas Autoplay)
 const remoteAudioNode = document.createElement('audio');
 remoteAudioNode.autoplay = true;
+remoteAudioNode.playsInline = true; 
+remoteAudioNode.muted = false;       
+remoteAudioNode.volume = 1.0;
 document.body.appendChild(remoteAudioNode);
 
-// --- COMPRESIÓN DE IMÁGENES NATIVA ---
+// --- COMPRESIÓN DE IMÁGENES ---
 async function comprimirImagen(file) {
-    if (!file.type.startsWith('image/')) return file; // Si es video u otro, saltar
+    if (!file.type.startsWith('image/')) return file;
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -91,6 +94,7 @@ function procesarTextoConHashtags(texto) {
     return escapado.replace(/#(\w+)/g, `<span class="hashtag" onclick="buscarTagDirecto('$1', event)">#$1</span>`);
 }
 
+// --- NAVEGACIÓN Y AUTENTICACIÓN ---
 function mostrarMuro() { document.getElementById('auth-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden'); navegarA('inicio'); }
 function mostrarLogin() {
     document.getElementById('auth-screen').classList.remove('hidden'); document.getElementById('main-screen').classList.add('hidden');
@@ -119,6 +123,7 @@ function navegarA(tab) {
     if(tab !== 'perfil-ajeno') perfilAjenoUidActivo = null;
 }
 
+// --- PERFILES Y POSTS ---
 async function subirImagenPerfil(file, tipo) {
     if(!currentUser) return;
     const btnId = tipo === 'perfil' ? 'btn-cambiar-foto' : 'btn-cambiar-portada';
@@ -158,11 +163,10 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
             comentariosHtml += `</div>`;
         }
 
-        // Renderizado adaptivo para fotos o videos en el feed
         let multimediaHtml = '';
         if (post.imageUrl) {
             if (post.isVideo || post.imageUrl.includes('.mp4') || post.imageUrl.includes('video%2F')) {
-                multimediaHtml = `<video src="${post.imageUrl}" controls class="post-img" style="max-height:350px; background:#000;"></video>`;
+                multimediaHtml = `<video src="${post.imageUrl}" controls playsinline class="post-img" style="max-height:350px; background:#000; width:100%; object-fit:contain;"></video>`;
             } else {
                 multimediaHtml = `<img src="${post.imageUrl}" class="post-img">`;
             }
@@ -305,6 +309,7 @@ function dibujarNotificaciones(lista) {
     }).join('') : '<p style="text-align:center; padding: 20px; color: var(--texto-gris);">Sin actividad reciente.</p>';
 }
 
+// --- HISTORIAS ---
 function dibujarHistoriasBarra(lista) {
     let html = `<div><div class="story-circle create" onclick="solicitarCrearHistoria()">＋</div><div class="story-username">Tú</div></div>`;
     const limite = Date.now() - 86400000; const vistos = [];
@@ -321,7 +326,6 @@ function dibujarHistoriasBarra(lista) {
     const scCont = document.getElementById('stories-carousel-container'); if(scCont) scCont.innerHTML = html;
 }
 
-// --- SUBIR HISTORIAS CON MULTIMEDIA ---
 async function solicitarCrearHistoria() {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = 'image/*,video/*';
@@ -365,7 +369,7 @@ function reproducirHistoria(t, u, encodedUrl, esVideo) {
 }
 function terminarVisorHistoria() { clearTimeout(temporizadorHistoria); const b = document.getElementById('story-progress-bar'); if(b) { b.style.transition = 'none'; b.style.width = '0%'; } document.getElementById('story-viewer')?.classList.add('hidden'); }
 
-// --- CHAT, INDICADOR Y VISTO ---
+// --- CHAT Y MENSAJES ---
 async function notificarEscribiendo(isTyping = true) {
     if(!chatUserUidActivo || !currentUser) return;
     const chatId = [currentUser.uid, chatUserUidActivo].sort().join("_");
@@ -394,7 +398,6 @@ async function abrirChatCon(tUid, tUser) {
         let h = ""; 
         snap.forEach(d => { 
             const m = d.data(); const mId = d.id;
-            // Marcar como leído si lo recibe el usuario actual
             if(m.senderUid !== currentUser.uid && !m.visto) { updateDoc(doc(db, "direct_messages", mId), { visto: true }); }
 
             const imgHtml = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:100%; border-radius:8px;">` : '';
@@ -440,7 +443,7 @@ async function enviarFotoEnChat(file) {
 }
 async function borrarMensajeChat(mId) { if(confirm("¿Borrar mensaje?")) await deleteDoc(doc(db, "direct_messages", mId)); }
 
-// --- SOLUCIÓN DEFINITIVA AUDIO LLAMADAS (WEBRTC) ---
+// --- LLAMADAS WEBRTC (CON FIX PARA MOVILES) ---
 async function iniciarLlamada(tipo) {
     if(!chatUserUidActivo) return;
     const isVideo = tipo === 'video';
@@ -453,16 +456,28 @@ async function iniciarLlamada(tipo) {
 
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
-        document.getElementById('local-video').srcObject = localStream;
+        if(document.getElementById('local-video')) document.getElementById('local-video').srcObject = localStream;
         
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         
         peerConnection.ontrack = (event) => {
             audioDial.pause(); audioDial.currentTime = 0;
-            // Forzar mapeo tanto al elemento de video como al de audio oculto para asegurar sonido en móviles
-            if(document.getElementById('remote-video')) document.getElementById('remote-video').srcObject = event.streams[0];
+            const remoteVideo = document.getElementById('remote-video');
+            if(remoteVideo) {
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideo.playsInline = true;
+                remoteVideo.muted = false;
+            }
+            
+            // Fix Móvil: Intentar reproducir el nodo de audio oculto
             remoteAudioNode.srcObject = event.streams[0];
+            remoteAudioNode.play().catch(err => {
+                console.warn("Autoplay bloqueado. Esperando interacción:", err);
+                // Si el navegador lo bloquea, esperamos a que el usuario toque la pantalla
+                document.addEventListener('touchstart', () => remoteAudioNode.play().catch(()=>{}), { once: true });
+                document.addEventListener('click', () => remoteAudioNode.play().catch(()=>{}), { once: true });
+            });
         };
 
         const callDoc = doc(collection(db, "calls"));
@@ -508,19 +523,28 @@ async function responderLlamada() {
     document.getElementById('call-controls-incoming').classList.add('hidden');
     document.getElementById('call-controls-outgoing').classList.remove('hidden');
     
+    // FIX MÓVIL CRÍTICO: Aprovechar este clic del usuario para desbloquear el audio
+    remoteAudioNode.play().catch(() => {});
+    
     const callDoc = doc(db, "calls", llamadaActualId);
     const callData = (await getDoc(callDoc)).data();
     
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: callData.type === 'video', audio: true });
-        document.getElementById('local-video').srcObject = localStream;
+        if(document.getElementById('local-video')) document.getElementById('local-video').srcObject = localStream;
         
         peerConnection = new RTCPeerConnection(iceServers);
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         
         peerConnection.ontrack = (event) => {
-            if(document.getElementById('remote-video')) document.getElementById('remote-video').srcObject = event.streams[0];
-            remoteAudioNode.srcObject = event.streams[0]; // Audio de entrada
+            const remoteVideo = document.getElementById('remote-video');
+            if(remoteVideo) {
+                remoteVideo.srcObject = event.streams[0];
+                remoteVideo.playsInline = true;
+                remoteVideo.muted = false;
+            }
+            remoteAudioNode.srcObject = event.streams[0];
+            remoteAudioNode.play().catch(err => console.log("Error autoplay:", err));
         };
 
         peerConnection.onicecandidate = (e) => { e.candidate && addDoc(collection(callDoc, "answerCandidates"), e.candidate.toJSON()); };
@@ -550,7 +574,7 @@ function finalizarLlamada() {
 function toggleMic() { if(localStream) { const t = localStream.getAudioTracks()[0]; if(t) t.enabled = !t.enabled; } }
 function toggleCam() { if(localStream) { const t = localStream.getVideoTracks()[0]; if(t) t.enabled = !t.enabled; } }
 
-// --- CREAR PUBLICACIONES CON IMAGEN O VIDEO AUTOMÁTICO ---
+// --- CREAR PUBLICACIONES CON MULTIMEDIA ---
 async function crearPublicacion(texto) {
     if (!datosMiPerfilGlobal) return;
     const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
@@ -559,7 +583,7 @@ async function crearPublicacion(texto) {
     try {
         if(file) {
             esVideo = file.type.startsWith('video/');
-            const fileBlob = esVideo ? file : await comprimirImagen(file); // Comprimir si es imagen
+            const fileBlob = esVideo ? file : await comprimirImagen(file);
             
             const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); 
             await uploadBytes(storageRef, fileBlob); 
@@ -570,7 +594,7 @@ async function crearPublicacion(texto) {
     } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
 }
 
-// --- RESTO DE PROCESOS LOCALES ---
+// --- UTILIDADES GLOBALES ---
 function setModoBusquedaActiva(modo) { modoBusquedaActual = modo; ejecutarBusquedaLocal(); }
 function buscarTagDirecto(tag, event) { if(event) event.stopPropagation(); navegarA('buscar'); setModoBusquedaActiva('tags'); ejecutarBusquedaLocal(); }
 function ejecutarBusquedaLocal() {
