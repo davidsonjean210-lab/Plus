@@ -44,7 +44,7 @@ const audioRing = new Audio('https://actions.google.com/sounds/v1/alarms/digital
 const audioDial = new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg');
 audioRing.loop = true; audioDial.loop = true;
 
-// Crear elemento de audio oculto nativo optimizado para móviles (Políticas Autoplay)
+// Crear elemento de audio oculto nativo optimizado para móviles
 const remoteAudioNode = document.createElement('audio');
 remoteAudioNode.autoplay = true;
 remoteAudioNode.playsInline = true; 
@@ -105,9 +105,13 @@ function mostrarLogin() {
     datosMiPerfilGlobal = null; usuariosGlobales = []; cacheTodosLosPosts = []; notificacionesGlobales = [];
 }
 
+// AQUÍ ESTABA EL ERROR: Faltaba agregar 'videos' en la lista de pestañas
 function navegarA(tab) {
-    const tabs = ['inicio', 'buscar', 'publicar', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno'];
-    tabs.forEach(t => { document.getElementById(`tab-${t}`)?.classList.add('hidden'); document.getElementById(`btn-tab-${t}`)?.classList.remove('active'); });
+    const tabs = ['inicio', 'buscar', 'publicar', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno', 'videos'];
+    tabs.forEach(t => { 
+        document.getElementById(`tab-${t}`)?.classList.add('hidden'); 
+        document.getElementById(`btn-tab-${t}`)?.classList.remove('active'); 
+    });
     
     const targetTab = document.getElementById(`tab-${tab}`);
     if(targetTab) targetTab.classList.remove('hidden');
@@ -443,7 +447,7 @@ async function enviarFotoEnChat(file) {
 }
 async function borrarMensajeChat(mId) { if(confirm("¿Borrar mensaje?")) await deleteDoc(doc(db, "direct_messages", mId)); }
 
-// --- LLAMADAS WEBRTC (CON FIX PARA MOVILES) ---
+// --- LLAMADAS WEBRTC ---
 async function iniciarLlamada(tipo) {
     if(!chatUserUidActivo) return;
     const isVideo = tipo === 'video';
@@ -470,11 +474,9 @@ async function iniciarLlamada(tipo) {
                 remoteVideo.muted = false;
             }
             
-            // Fix Móvil: Intentar reproducir el nodo de audio oculto
             remoteAudioNode.srcObject = event.streams[0];
             remoteAudioNode.play().catch(err => {
                 console.warn("Autoplay bloqueado. Esperando interacción:", err);
-                // Si el navegador lo bloquea, esperamos a que el usuario toque la pantalla
                 document.addEventListener('touchstart', () => remoteAudioNode.play().catch(()=>{}), { once: true });
                 document.addEventListener('click', () => remoteAudioNode.play().catch(()=>{}), { once: true });
             });
@@ -523,7 +525,6 @@ async function responderLlamada() {
     document.getElementById('call-controls-incoming').classList.add('hidden');
     document.getElementById('call-controls-outgoing').classList.remove('hidden');
     
-    // FIX MÓVIL CRÍTICO: Aprovechar este clic del usuario para desbloquear el audio
     remoteAudioNode.play().catch(() => {});
     
     const callDoc = doc(db, "calls", llamadaActualId);
@@ -577,21 +578,46 @@ function toggleCam() { if(localStream) { const t = localStream.getVideoTracks()[
 // --- CREAR PUBLICACIONES CON MULTIMEDIA ---
 async function crearPublicacion(texto) {
     if (!datosMiPerfilGlobal) return;
-    const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
-    const fileInput = document.getElementById('input-post-foto'); const file = fileInput.files[0]; 
-    let imgUrl = null; let esVideo = false;
+    const btn = document.getElementById('btn-publicar-accion'); 
+    btn.innerText = "Publicando...";
+    const fileInput = document.getElementById('input-post-foto'); 
+    const file = fileInput.files[0]; 
+    let imgUrl = null; 
+    let esVideo = false;
+    
     try {
         if(file) {
             esVideo = file.type.startsWith('video/');
-            const fileBlob = esVideo ? file : await comprimirImagen(file);
             
+            if (esVideo && file.size > 50 * 1024 * 1024) {
+                alert("El video es muy pesado. El límite es 50MB.");
+                btn.innerText = "Publicar ahora";
+                return;
+            }
+
+            const fileBlob = esVideo ? file : await comprimirImagen(file);
             const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); 
             await uploadBytes(storageRef, fileBlob); 
             imgUrl = await getDownloadURL(storageRef); 
         }
-        await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, isVideo: esVideo, likes: [], comments: [], timestamp: serverTimestamp() });
-        document.getElementById('post-text').value = ""; fileInput.value = ""; navegarA('inicio');
-    } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
+        await addDoc(collection(db, "posts"), { 
+            text: texto, 
+            uid: currentUser.uid, 
+            username: datosMiPerfilGlobal.username, 
+            imageUrl: imgUrl, 
+            isVideo: esVideo, 
+            likes: [], 
+            comments: [], 
+            timestamp: serverTimestamp() 
+        });
+        
+        document.getElementById('post-text').value = ""; 
+        fileInput.value = ""; 
+        navegarA('inicio');
+    } catch(e) { 
+        alert("Error al publicar: " + e.message); 
+    } 
+    btn.innerText = "Publicar ahora";
 }
 
 // --- UTILIDADES GLOBALES ---
@@ -620,6 +646,44 @@ async function reportarPublicacion(pId) { alert("Reportado."); }
 async function bloquearPersona(uid) { await updateDoc(doc(db, "users", currentUser.uid), { blockedUsers: arrayUnion(uid) }); navegarA('inicio'); }
 async function hacerRepulse(pId) { alert("Re-pulsado."); }
 
+// --- SISTEMA DE BLOQUEOS ---
+function verUsuariosBloqueados() {
+    const bloqueadosIds = datosMiPerfilGlobal?.blockedUsers || [];
+    if (bloqueadosIds.length === 0) {
+        alert("No tienes a ningún usuario bloqueado.");
+        return;
+    }
+    
+    const usuariosBloqueados = usuariosGlobales.filter(u => bloqueadosIds.includes(u.uid));
+    document.getElementById('modal-lista-titulo').innerText = 'Usuarios Bloqueados';
+    document.getElementById('modal-lista-contenido').innerHTML = usuariosBloqueados.map(u => `
+        <div class="custom-card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="display:flex; align-items:center;">
+                <span style="font-size:24px; margin-right:10px;">👤</span>
+                <span style="font-weight:bold; color:var(--texto-blanco);">@${u.username}</span>
+            </div>
+            <button class="btn-plus-sec" style="background:#ff4a5a; color:white; border:none; padding:5px 15px; border-radius:15px; font-weight:bold;" onclick="desbloquearPersona('${u.uid}')">Desbloquear</button>
+        </div>
+    `).join('');
+    
+    document.getElementById('modal-lista-usuarios').classList.remove('hidden');
+}
+
+async function desbloquearPersona(uid) {
+    if(confirm("¿Estás seguro de que quieres desbloquear a este usuario? Podrá volver a ver tus publicaciones y enviarte mensajes.")) {
+        try {
+            await updateDoc(doc(db, "users", currentUser.uid), { 
+                blockedUsers: arrayRemove(uid) 
+            });
+            cerrarModalListaUI();
+            alert("Usuario desbloqueado correctamente.");
+            actualizarMurosYFeed(); 
+        } catch(e) {
+            alert("Error al desbloquear.");
+        }
+    }
+}
+
 onAuthStateChanged(auth, (user) => { if(user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); escucharLlamadasEntrantes(); } else { currentUser = null; mostrarLogin(); } });
 async function registrarUsuario(e, p, u) { try { const c = await createUserWithEmailAndPassword(auth, e, p); await setDoc(doc(db, "users", c.user.uid), { uid: c.user.uid, username: u.toLowerCase(), followersCount: 0, following: [], blockedUsers: [], bio: "¡Hola!" }); } catch(err) { alert(err.message); } }
 async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error"); } }
@@ -632,4 +696,4 @@ function activarLecturaTiempoReal() {
     desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => { notificacionesGlobales = s.docs.map(d => d.data()); dibujarNotificaciones(notificacionesGlobales); });
 }
 
-window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.ejecutarBusquedaLocal = ejecutarBusquedaLocal; window.setModoBusquedaActiva = setModoBusquedaActiva; window.buscarTagDirecto = buscarTagDirecto; window.darLike = darLike; window.comentarPost = comentarPost; window.eliminarPost = eliminarPost; window.reportarPublicacion = reportarPublicacion; window.bloquearPersona = bloquearPersona; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.solicitarCrearHistoria = solicitarCrearHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.iniciarLlamada = iniciarLlamada; window.responderLlamada = responderLlamada; window.finalizarLlamada = finalizarLlamada; window.toggleMic = toggleMic; window.toggleCam = toggleCam; window.notificarEscribiendo = notificarEscribiendo;
+window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.ejecutarBusquedaLocal = ejecutarBusquedaLocal; window.setModoBusquedaActiva = setModoBusquedaActiva; window.buscarTagDirecto = buscarTagDirecto; window.darLike = darLike; window.comentarPost = comentarPost; window.eliminarPost = eliminarPost; window.reportarPublicacion = reportarPublicacion; window.bloquearPersona = bloquearPersona; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.solicitarCrearHistoria = solicitarCrearHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.iniciarLlamada = iniciarLlamada; window.responderLlamada = responderLlamada; window.finalizarLlamada = finalizarLlamada; window.toggleMic = toggleMic; window.toggleCam = toggleCam; window.notificarEscribiendo = notificarEscribiendo; window.verUsuariosBloqueados = verUsuariosBloqueados; window.desbloquearPersona = desbloquearPersona;
