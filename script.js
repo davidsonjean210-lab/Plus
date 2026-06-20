@@ -21,14 +21,16 @@ let currentUser = null;
 let datosMiPerfilGlobal = null;
 let usuariosGlobales = [];
 let cacheTodosLosPosts = [];
+let cacheTodosLosReels = [];
 let notificacionesGlobales = [];
 
-let desubscribirPosts = null, desubscribirUsuarios = null, desubscribirNotif = null, desubscribirChatMensajes = null, desubscribirStories = null;
+let desubscribirPosts = null, desubscribirReels = null, desubscribirUsuarios = null, desubscribirNotif = null, desubscribirChatMensajes = null, desubscribirStories = null;
 
 let chatUserUidActivo = null;
 let temporizadorHistoria = null;
 let perfilAjenoUidActivo = null;
 let modoBusquedaActual = 'usuarios';
+let observerReels = null; // Observer para autoplay de Reels
 
 // Variables WebRTC para Llamadas
 let localStream = null;
@@ -61,18 +63,20 @@ function procesarTextoConHashtags(texto) {
 function mostrarMuro() { document.getElementById('auth-screen').classList.add('hidden'); document.getElementById('main-screen').classList.remove('hidden'); navegarA('inicio'); }
 function mostrarLogin() {
     document.getElementById('auth-screen').classList.remove('hidden'); document.getElementById('main-screen').classList.add('hidden');
-    if(desubscribirPosts) desubscribirPosts(); if(desubscribirUsuarios) desubscribirUsuarios();
+    if(desubscribirPosts) desubscribirPosts(); if(desubscribirUsuarios) desubscribirUsuarios(); if(desubscribirReels) desubscribirReels();
     if(desubscribirNotif) desubscribirNotif(); if(desubscribirStories) desubscribirStories();
     if(llamadasEntrantesUnsubscribe) llamadasEntrantesUnsubscribe();
     cerrarChatActivo(); terminarVisorHistoria(); finalizarLlamada();
     
-    datosMiPerfilGlobal = null; usuariosGlobales = []; cacheTodosLosPosts = []; notificacionesGlobales = [];
+    datosMiPerfilGlobal = null; usuariosGlobales = []; cacheTodosLosPosts = []; cacheTodosLosReels = []; notificacionesGlobales = [];
 }
 
 function navegarA(tab) {
-    const tabs = ['inicio', 'buscar', 'publicar', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno'];
+    const tabs = ['inicio', 'buscar', 'publicar', 'reels', 'explorar', 'perfil', 'notificaciones', 'mensajes', 'perfil-ajeno'];
     tabs.forEach(t => { document.getElementById(`tab-${t}`)?.classList.add('hidden'); document.getElementById(`btn-tab-${t}`)?.classList.remove('active'); });
     
+    document.getElementById(`btn-tab-explorar`)?.classList.remove('active');
+
     const targetTab = document.getElementById(`tab-${tab}`);
     targetTab.classList.remove('hidden');
     
@@ -82,6 +86,11 @@ function navegarA(tab) {
 
     document.getElementById(`btn-tab-${tab}`)?.classList.add('active');
     
+    // Pausar videos de Reels si salimos de la pestaña
+    if(tab !== 'reels') {
+        document.querySelectorAll('.reel-video').forEach(v => v.pause());
+    }
+
     if(tab === 'notificaciones') { localStorage.setItem('lastCheckedNotif', Date.now().toString()); document.getElementById('badge-notif').classList.add('hidden'); }
     if(tab === 'mensajes') { 
         cerrarChatActivo(); 
@@ -159,6 +168,77 @@ function dibujarPosts(listaDePosts, contenedorId = 'feed-container') {
     contenedor.innerHTML = html;
 }
 
+// --- LOGICA Y RENDERIZADO DE REELS ---
+function dibujarReels(listaDeReels) {
+    const wrapper = document.getElementById('reels-feed-wrapper');
+    if (!wrapper) return;
+    if (listaDeReels.length === 0) { wrapper.innerHTML = '<p style="color:var(--texto-gris); text-align:center; padding: 40px;">No hay videos subidos aún.</p>'; return; }
+
+    const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
+    const reelsLimpios = listaDeReels.filter(r => !bloqueados.includes(r.uid));
+
+    wrapper.innerHTML = reelsLimpios.map(reel => {
+        const likes = reel.likes || [];
+        const comments = reel.comments || [];
+        const yaDioLike = currentUser && likes.includes(currentUser.uid);
+        const btnEliminar = (currentUser && reel.uid === currentUser.uid) ? `<button class="reel-action-button" style="color:#ff4a5a; font-size:16px;" onclick="ejecutarEliminarReel('${reel.id}')" title="Eliminar Reel">🗑️</button>` : '';
+
+        return `
+            <div class="reel-card">
+                <video src="${reel.videoUrl}" class="reel-video" loop playsinline controls muted></video>
+                
+                <div class="reel-sidebar-actions">
+                    <button class="reel-action-button ${yaDioLike ? 'liked' : ''}" onclick="ejecutarLikeReel('${reel.id}', '${reel.uid}')">
+                        ❤️
+                    </button>
+                    <span class="reel-action-counter">${likes.length}</span>
+
+                    <button class="reel-action-button" onclick="ejecutarComentarReel('${reel.id}')">
+                        💬
+                    </button>
+                    <span class="reel-action-counter">${comments.length}</span>
+                    
+                    ${btnEliminar}
+                </div>
+
+                <div class="reel-bottom-info">
+                    <h3 class="reel-user-tag" onclick="verPerfilDe('${reel.uid}')">@${reel.username}</h3>
+                    <p class="reel-description">${procesarTextoConHashtags(reel.text)}</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    configurarAutoPlayReels();
+}
+
+function configurarAutoPlayReels() {
+    if (observerReels) observerReels.disconnect();
+
+    observerReels = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const video = entry.target;
+            if (entry.isIntersecting) {
+                video.play().catch(err => console.log("Autoplay bloqueado:", err));
+            } else {
+                video.pause();
+            }
+        });
+    }, {
+        threshold: 0.6 // El 60% del video debe estar visible para reproducirse
+    });
+
+    document.querySelectorAll('.reel-video').forEach(video => {
+        observerReels.observe(video);
+        
+        video.addEventListener('click', () => {
+            if (video.muted) {
+                video.muted = false;
+            }
+        });
+    });
+}
+
 function generarHtmlUsuario(user) {
     const yaLoSigo = datosMiPerfilGlobal?.following?.includes(user.uid);
     return `<div class="custom-card" style="display:flex; justify-content:space-between; align-items:center;">
@@ -217,7 +297,7 @@ function dibujarListaContactosChat(lista) {
         let unreadDot = "";
         
         if (u.lastMsg) {
-            prevText = u.lastMsg.text || "📷 Nueva foto";
+            prevText = u.lastMsg.text || "📷 Foto";
             const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
             
             if (u.lastMsg.timestamp && u.lastMsg.timestamp.toMillis() > lastCheckedMensajes) {
@@ -348,7 +428,6 @@ async function abrirChatCon(tUid, tUser) {
         setTimeout(() => { box.scrollTop = box.scrollHeight; }, 100);
     });
 }
-
 function cerrarChatActivo() { chatUserUidActivo = null; if(desubscribirChatMensajes) desubscribirChatMensajes(); document.getElementById('chat-list-view').classList.remove('hidden'); document.getElementById('chat-active-view').classList.add('hidden'); }
 
 async function enviarMensajePrivado(txt, imgUrl = null) { 
@@ -368,12 +447,72 @@ async function enviarFotoEnChat(file) {
 
 async function borrarMensajeChat(mId) { if(confirm("¿Borrar mensaje para todos?")) await deleteDoc(doc(db, "direct_messages", mId)); }
 
-// --- FUNCIONALIDAD DE LLAMADAS (WEBRTC) ---
+// --- INTERACCIONES DE REELS (FIRESTORE) ---
+async function darLikeReel(rId, oUid) {
+    const docRef = doc(db, "reels", rId);
+    const snap = await getDoc(docRef);
+    const data = snap.data();
+    if(data.likes?.includes(currentUser.uid)) {
+        await updateDoc(docRef, { likes: arrayRemove(currentUser.uid) });
+    } else {
+        await updateDoc(docRef, { likes: arrayUnion(currentUser.uid) });
+        if(oUid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: oUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() });
+    }
+}
 
+async function comentarReel(rId) {
+    const t = prompt("Comenta este video:");
+    if(t?.trim()) await updateDoc(doc(db, "reels", rId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: t.trim() }) });
+}
+
+async function eliminarReel(rId) {
+    if(confirm("¿Seguro que deseas eliminar permanentemente este Reel?")) {
+        await deleteDoc(doc(db, "reels", rId));
+    }
+}
+
+// --- CREACIÓN INTEGRADA DE PULSE O REEL ---
+async function crearPublicacion(texto) {
+    if (!datosMiPerfilGlobal) return;
+    const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
+    const filePhoto = document.getElementById('input-post-foto').files[0];
+    const fileVideo = document.getElementById('input-post-video').files[0];
+
+    try {
+        if (fileVideo) {
+            // DETECTA VIDEO: Sube a Storage y crea un REEL
+            const storageRef = ref(storage, 'reels_videos/' + currentUser.uid + '_' + Date.now());
+            await uploadBytes(storageRef, fileVideo);
+            const videoUrl = await getDownloadURL(storageRef);
+            
+            await addDoc(collection(db, "reels"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, videoUrl: videoUrl, likes: [], comments: [], timestamp: serverTimestamp() });
+            
+            document.getElementById('input-post-video').value = "";
+            document.getElementById('preview-post-video').style.display = 'none';
+            document.getElementById('post-text').value = "";
+            navegarA('reels');
+        } else {
+            // SINO: Crea un Pulse normal en el feed
+            let imgUrl = null;
+            if(filePhoto) { 
+                const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); 
+                await uploadBytes(storageRef, filePhoto); 
+                imgUrl = await getDownloadURL(storageRef); 
+            }
+            await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, likes: [], comments: [], timestamp: serverTimestamp() });
+            
+            document.getElementById('input-post-foto').value = ""; 
+            document.getElementById('preview-post-img').style.display = 'none';
+            document.getElementById('post-text').value = ""; 
+            navegarA('inicio');
+        }
+    } catch(e) { alert("Error al subir contenido"); } 
+    btn.innerText = "Publicar ahora";
+}
+
+// --- LLAMADAS WEBRTC ---
 async function iniciarLlamada(tipo) {
-    if(!chatUserUidActivo) return;
-    const isVideo = tipo === 'video';
-    
+    if(!chatUserUidActivo) return; const isVideo = tipo === 'video';
     document.getElementById('call-overlay').classList.remove('hidden');
     document.getElementById('call-controls-incoming').classList.add('hidden');
     document.getElementById('call-controls-outgoing').classList.remove('hidden');
@@ -390,52 +529,34 @@ async function iniciarLlamada(tipo) {
         localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
 
-        const callDoc = doc(collection(db, "calls"));
-        llamadaActualId = callDoc.id;
+        const callDoc = doc(collection(db, "calls")); llamadaActualId = callDoc.id;
         const offerCandidates = collection(callDoc, "offerCandidates");
         const answerCandidates = collection(callDoc, "answerCandidates");
 
         peerConnection.onicecandidate = (event) => { event.candidate && addDoc(offerCandidates, event.candidate.toJSON()); };
-
-        const offerDescription = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offerDescription);
-
-        const offer = { sdp: offerDescription.sdp, type: offerDescription.type };
-        await setDoc(callDoc, { offer, caller: currentUser.uid, callee: chatUserUidActivo, type: tipo, status: 'calling' });
+        const offerDescription = await peerConnection.createOffer(); await peerConnection.setLocalDescription(offerDescription);
+        await setDoc(callDoc, { offer: { sdp: offerDescription.sdp, type: offerDescription.type }, caller: currentUser.uid, callee: chatUserUidActivo, type: tipo, status: 'calling' });
 
         unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => {
-            const data = snapshot.data();
-            if(!data || data.status === 'ended' || data.status === 'rejected') { finalizarLlamada(); return; }
+            const data = snapshot.data(); if(!data || data.status === 'ended' || data.status === 'rejected') { finalizarLlamada(); return; }
             if (!peerConnection.currentRemoteDescription && data?.answer) {
-                const answerDescription = new RTCSessionDescription(data.answer);
-                peerConnection.setRemoteDescription(answerDescription);
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
                 document.getElementById('call-status').innerText = 'Conectado ⏱️';
             }
         });
-
-        onSnapshot(answerCandidates, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-            });
-        });
-    } catch (e) {
-        alert("Necesitas dar permisos de cámara y micrófono.");
-        finalizarLlamada();
-    }
+        onSnapshot(answerCandidates, (snapshot) => { snapshot.docChanges().forEach((change) => { if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data())); }); });
+    } catch (e) { alert("Faltan permisos."); finalizarLlamada(); }
 }
 
 function escucharLlamadasEntrantes() {
-    if(!currentUser) return;
-    if(llamadasEntrantesUnsubscribe) llamadasEntrantesUnsubscribe();
+    if(!currentUser) return; if(llamadasEntrantesUnsubscribe) llamadasEntrantesUnsubscribe();
     llamadasEntrantesUnsubscribe = onSnapshot(query(collection(db, "calls"), where("callee", "==", currentUser.uid), where("status", "==", "calling")), (snapshot) => {
         snapshot.docChanges().forEach((change) => {
             if (change.type === 'added') {
-                const callData = change.doc.data();
-                llamadaActualId = change.doc.id;
+                const callData = change.doc.data(); llamadaActualId = change.doc.id;
                 document.getElementById('call-overlay').classList.remove('hidden');
                 document.getElementById('call-controls-incoming').classList.remove('hidden');
                 document.getElementById('call-controls-outgoing').classList.add('hidden');
-                
                 const callerObj = usuariosGlobales.find(u => u.uid === callData.caller);
                 document.getElementById('call-user-name').innerText = callerObj ? callerObj.username : 'Usuario';
                 document.getElementById('call-status').innerText = callData.type === 'video' ? 'Videollamada entrante...' : 'Llamada de voz entrante...';
@@ -448,85 +569,36 @@ async function responderLlamada() {
     document.getElementById('call-controls-incoming').classList.add('hidden');
     document.getElementById('call-controls-outgoing').classList.remove('hidden');
     document.getElementById('call-status').innerText = 'Conectando...';
-
-    const callDoc = doc(db, "calls", llamadaActualId);
-    const callData = (await getDoc(callDoc)).data();
-    const isVideo = callData.type === 'video';
-
+    const callDoc = doc(db, "calls", llamadaActualId); const callData = (await getDoc(callDoc)).data(); const isVideo = callData.type === 'video';
     try {
         localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
-        remoteStream = new MediaStream();
-        document.getElementById('local-video').srcObject = localStream;
-        document.getElementById('remote-video').srcObject = remoteStream;
-
-        peerConnection = new RTCPeerConnection(iceServers);
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        remoteStream = new MediaStream(); document.getElementById('local-video').srcObject = localStream; document.getElementById('remote-video').srcObject = remoteStream;
+        peerConnection = new RTCPeerConnection(iceServers); localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
         peerConnection.ontrack = (event) => { event.streams[0].getTracks().forEach(track => remoteStream.addTrack(track)); };
-
-        const offerCandidates = collection(callDoc, "offerCandidates");
-        const answerCandidates = collection(callDoc, "answerCandidates");
-
+        const offerCandidates = collection(callDoc, "offerCandidates"); const answerCandidates = collection(callDoc, "answerCandidates");
         peerConnection.onicecandidate = (event) => { event.candidate && addDoc(answerCandidates, event.candidate.toJSON()); };
-
         await peerConnection.setRemoteDescription(new RTCSessionDescription(callData.offer));
-        const answerDescription = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answerDescription);
-
-        const answer = { type: answerDescription.type, sdp: answerDescription.sdp };
-        await updateDoc(callDoc, { answer, status: 'answered' });
+        const answerDescription = await peerConnection.createAnswer(); await peerConnection.setLocalDescription(answerDescription);
+        await updateDoc(callDoc, { answer: { type: answerDescription.type, sdp: answerDescription.sdp }, status: 'answered' });
         document.getElementById('call-status').innerText = 'Conectado ⏱️';
-
-        unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => {
-            if(!snapshot.exists() || snapshot.data().status === 'ended') finalizarLlamada();
-        });
-
-        onSnapshot(offerCandidates, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data()));
-            });
-        });
-    } catch(e) {
-        alert("Error al conectar dispositivos.");
-        finalizarLlamada();
-    }
+        unsubscribeLlamadaActiva = onSnapshot(callDoc, (snapshot) => { if(!snapshot.exists() || snapshot.data().status === 'ended') finalizarLlamada(); });
+        onSnapshot(offerCandidates, (snapshot) => { snapshot.docChanges().forEach((change) => { if (change.type === 'added') peerConnection.addIceCandidate(new RTCIceCandidate(change.doc.data())); }); });
+    } catch(e) { finalizarLlamada(); }
 }
 
 async function finalizarLlamada() {
-    if(peerConnection) peerConnection.close();
-    if(localStream) localStream.getTracks().forEach(track => track.stop());
-    if(remoteStream) remoteStream.getTracks().forEach(track => track.stop());
+    if(peerConnection) peerConnection.close(); if(localStream) localStream.getTracks().forEach(track => track.stop()); if(remoteStream) remoteStream.getTracks().forEach(track => track.stop());
     peerConnection = null; localStream = null; remoteStream = null;
-
-    if(llamadaActualId) {
-        try { await updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }); } catch(e) {}
-    }
-    llamadaActualId = null;
-    if(unsubscribeLlamadaActiva) unsubscribeLlamadaActiva();
+    if(llamadaActualId) { try { await updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }); } catch(e) {} }
+    llamadaActualId = null; if(unsubscribeLlamadaActiva) unsubscribeLlamadaActiva();
     document.getElementById('call-overlay').classList.add('hidden');
-    document.getElementById('local-video').srcObject = null;
-    document.getElementById('remote-video').srcObject = null;
+    document.getElementById('local-video').srcObject = null; document.getElementById('remote-video').srcObject = null;
 }
 
-function toggleMic() {
-    if(!localStream) return;
-    const audioTrack = localStream.getAudioTracks()[0];
-    if(audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        document.getElementById('btn-mic').style.background = audioTrack.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a';
-    }
-}
+function toggleMic() { if(!localStream) return; const t = localStream.getAudioTracks()[0]; if(t) { t.enabled = !t.enabled; document.getElementById('btn-mic').style.background = t.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a'; } }
+function toggleCam() { if(!localStream) return; const t = localStream.getVideoTracks()[0]; if(t) { t.enabled = !t.enabled; document.getElementById('btn-cam').style.background = t.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a'; } }
 
-function toggleCam() {
-    if(!localStream) return;
-    const videoTrack = localStream.getVideoTracks()[0];
-    if(videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        document.getElementById('btn-cam').style.background = videoTrack.enabled ? 'rgba(51, 51, 51, 0.8)' : '#ff4a5a';
-    }
-}
-
-// --- BUSQUEDA, HERRAMIENTAS Y AUTH ---
-
+// --- BUSQUEDAS Y UTILS ---
 function setModoBusquedaActiva(modo) {
     modoBusquedaActual = modo;
     document.getElementById('btn-busq-usuarios').className = modo === 'usuarios' ? 'btn-plus' : 'btn-plus-sec';
@@ -536,181 +608,106 @@ function setModoBusquedaActiva(modo) {
     ejecutarBusquedaLocal();
 }
 
-function buscarTagDirecto(tag, event) {
-    if(event) event.stopPropagation();
-    navegarA('buscar');
-    setModoBusquedaActiva('tags');
-    document.getElementById('input-busqueda').value = '#' + tag;
-    ejecutarBusquedaLocal();
-}
+function buscarTagDirecto(tag, event) { if(event) event.stopPropagation(); navegarA('buscar'); setModoBusquedaActiva('tags'); document.getElementById('input-busqueda').value = '#' + tag; ejecutarBusquedaLocal(); }
 
 function ejecutarBusquedaLocal() {
-    const q = document.getElementById('input-busqueda').value.toLowerCase().trim(); 
-    const c = document.getElementById('resultados-busqueda');
+    const q = document.getElementById('input-busqueda').value.toLowerCase().trim(); const c = document.getElementById('resultados-busqueda');
     if(!q) { c.innerHTML = "<p style='color:var(--texto-gris);'>Escribe algo para buscar...</p>"; return; }
-    
     const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
-
     if (modoBusquedaActual === 'usuarios') {
-        const qLimpio = q.replace('@','');
-        const r = usuariosGlobales.filter(u => u.username.toLowerCase().includes(qLimpio) && u.uid !== currentUser.uid && !bloqueados.includes(u.uid));
+        const r = usuariosGlobales.filter(u => u.username.toLowerCase().includes(q.replace('@','')) && u.uid !== currentUser.uid && !bloqueados.includes(u.uid));
         c.innerHTML = r.length ? r.map(generarHtmlUsuario).join('') : "<p>Usuarios no encontrados.</p>";
     } else {
         const tagBuscar = q.startsWith('#') ? q : '#' + q;
-        const postsLimpios = cacheTodosLosPosts.filter(p => !bloqueados.includes(p.uid));
-        const r = postsLimpios.filter(p => p.text.toLowerCase().includes(tagBuscar));
+        const r = cacheTodosLosPosts.filter(p => !bloqueados.includes(p.uid) && p.text.toLowerCase().includes(tagBuscar));
         dibujarPosts(r, 'resultados-busqueda');
     }
 }
 
-async function bloquearPersona(uid) {
-    if(confirm("¿Seguro que quieres bloquear a este usuario? Desaparecerán sus posts, historias y no podrá escribirte.")) {
-        await updateDoc(doc(db, "users", currentUser.uid), { blockedUsers: arrayUnion(uid) });
-        alert("Usuario bloqueado.");
-        navegarA('inicio');
-    }
-}
-
-async function reportarPublicacion(postId) {
-    if(confirm("¿Reportar esta publicación por contenido inapropiado o spam? Nuestro equipo la revisará.")) {
-        await addDoc(collection(db, "reports"), { postId: postId, reporterUid: currentUser.uid, timestamp: serverTimestamp() });
-        alert("Publicación reportada correctamente. Gracias por ayudar a mantener la comunidad segura.");
-    }
-}
+async function bloquearPersona(uid) { if(confirm("¿Bloquear usuario?")) { await updateDoc(doc(db, "users", currentUser.uid), { blockedUsers: arrayUnion(uid) }); alert("Usuario bloqueado."); navegarA('inicio'); } }
+async function reportarPublicacion(postId) { if(confirm("¿Reportar post?")) { await addDoc(collection(db, "reports"), { postId: postId, reporterUid: currentUser.uid, timestamp: serverTimestamp() }); alert("Reportado."); } }
 
 async function eliminarMiCuenta() {
     if (!currentUser) return;
-    if (confirm("¿Estás seguro de que quieres eliminar tu cuenta permanentemente? Perderás tu perfil y esto no se puede deshacer.")) {
+    if (confirm("¿Eliminar cuenta permanentemente? Perderás todo.")) {
         try {
-            // 1. Borrar todas las publicaciones del usuario
-            const postsQuery = query(collection(db, "posts"), where("uid", "==", currentUser.uid));
-            const postsSnap = await getDocs(postsQuery);
+            const postsQuery = query(collection(db, "posts"), where("uid", "==", currentUser.uid)); const postsSnap = await getDocs(postsQuery);
             postsSnap.forEach(async (docSnap) => { await deleteDoc(docSnap.ref); });
-
-            // 2. Borrar las historias activas del usuario
-            const storiesQuery = query(collection(db, "stories"), where("uid", "==", currentUser.uid));
-            const storiesSnap = await getDocs(storiesQuery);
+            const storiesQuery = query(collection(db, "stories"), where("uid", "==", currentUser.uid)); const storiesSnap = await getDocs(storiesQuery);
             storiesSnap.forEach(async (docSnap) => { await deleteDoc(docSnap.ref); });
-
-            // 3. Borrar el documento del perfil y la cuenta de Auth
-            await deleteDoc(doc(db, "users", currentUser.uid));
-            await deleteUser(currentUser);
-            alert("Cuenta eliminada correctamente sin dejar rastros.");
-        } catch(e) {
-            alert("Error al eliminar la cuenta. Por motivos de seguridad, es posible que necesites cerrar sesión, volver a iniciarla e intentarlo de nuevo.");
-        }
+            await deleteDoc(doc(db, "users", currentUser.uid)); await deleteUser(currentUser); alert("Eliminada.");
+        } catch(e) { alert("Cierra sesión e inicia de nuevo para re-autenticar."); }
     }
 }
 
 async function darLike(pId, oUid) { const r = doc(db, "posts", pId); const s = await getDoc(r); const d = s.data(); if(d.likes?.includes(currentUser.uid)) { await updateDoc(r, { likes: arrayRemove(currentUser.uid) }); } else { await updateDoc(r, { likes: arrayUnion(currentUser.uid) }); if(oUid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: oUid, fromUsername: datosMiPerfilGlobal.username, type: 'like', timestamp: serverTimestamp() }); } }
 async function comentarPost(pId) { const t = prompt("Tu respuesta:"); if(t?.trim()) await updateDoc(doc(db, "posts", pId), { comments: arrayUnion({ username: datosMiPerfilGlobal.username, text: t.trim() }) }); }
-async function borrarComentario(postId, commentStr) { if(confirm("¿Borrar este comentario?")) { const cObj = JSON.parse(decodeURIComponent(commentStr)); await updateDoc(doc(db, "posts", postId), { comments: arrayRemove(cObj) }); } }
-async function editarPerfil() { const b = prompt("Nueva biografía (puedes usar #hashtags):"); if(b) await updateDoc(doc(db, "users", currentUser.uid), { bio: b.substring(0, 100) }); }
+async function borrarComentario(postId, commentStr) { if(confirm("¿Borrar comentario?")) { const cObj = JSON.parse(decodeURIComponent(commentStr)); await updateDoc(doc(db, "posts", postId), { comments: arrayRemove(cObj) }); } }
+async function editarPerfil() { const b = prompt("Nueva biografía:"); if(b) await updateDoc(doc(db, "users", currentUser.uid), { bio: b.substring(0, 100) }); }
 
 async function eliminarPost(pId) { 
     if(confirm("¿Eliminar publicación?")) {
-        // Borrar el post original
         await deleteDoc(doc(db, "posts", pId)); 
-        
-        // Buscar y eliminar cualquier repulse que tenga este ID como original
-        const repulsesQuery = query(collection(db, "posts"), where("originalPostId", "==", pId));
-        const repulsesSnap = await getDocs(repulsesQuery);
+        const repulsesSnap = await getDocs(query(collection(db, "posts"), where("originalPostId", "==", pId)));
         repulsesSnap.forEach(async (docSnap) => { await deleteDoc(docSnap.ref); });
     } 
 }
 
 async function hacerRepulse(pId) {
-    const postOriginal = cacheTodosLosPosts.find(p => p.id === pId);
-    if (!postOriginal || !datosMiPerfilGlobal) return;
-    if (confirm("¿Quieres compartir (Re-pulsar) esta publicación en tu perfil?")) {
+    const postOriginal = cacheTodosLosPosts.find(p => p.id === pId); if (!postOriginal || !datosMiPerfilGlobal) return;
+    if (confirm("¿Re-pulsar esta publicación?")) {
         try {
             await addDoc(collection(db, "posts"), { text: postOriginal.text, imageUrl: postOriginal.imageUrl || null, uid: currentUser.uid, username: datosMiPerfilGlobal.username, likes: [], comments: [], timestamp: serverTimestamp(), isRepulse: true, originalAuthor: postOriginal.username, originalUid: postOriginal.uid, originalPostId: postOriginal.id });
             if(postOriginal.uid !== currentUser.uid) await addDoc(collection(db, "notifications"), { toUid: postOriginal.uid, fromUsername: datosMiPerfilGlobal.username, type: 'repulse', timestamp: serverTimestamp() });
-            alert("¡Publicación compartida con éxito!");
-        } catch(e) { alert("Error al hacer re-pulse."); }
+        } catch(e) {}
     }
-}
-
-async function crearPublicacion(texto) {
-    if (!datosMiPerfilGlobal) return;
-    const btn = document.getElementById('btn-publicar-accion'); btn.innerText = "Publicando...";
-    const fileInput = document.getElementById('input-post-foto'); const file = fileInput.files[0]; let imgUrl = null;
-    try {
-        if(file) { const storageRef = ref(storage, 'posts_images/' + currentUser.uid + '_' + Date.now()); await uploadBytes(storageRef, file); imgUrl = await getDownloadURL(storageRef); }
-        await addDoc(collection(db, "posts"), { text: texto, uid: currentUser.uid, username: datosMiPerfilGlobal.username, imageUrl: imgUrl, likes: [], comments: [], timestamp: serverTimestamp() });
-        document.getElementById('post-text').value = ""; fileInput.value = ""; document.getElementById('preview-post-img').style.display = 'none'; navegarA('inicio');
-    } catch(e) { alert("Error al publicar"); } btn.innerText = "Publicar ahora";
 }
 
 async function toggleSeguirUsuario(uid) {
     if(!datosMiPerfilGlobal) return; const mR = doc(db, "users", currentUser.uid); const oR = doc(db, "users", uid);
-    if(datosMiPerfilGlobal.following?.includes(uid)) { 
-        await updateDoc(mR, { following: arrayRemove(uid) }); await updateDoc(oR, { followersCount: increment(-1) }); 
-    } else { 
-        await updateDoc(mR, { following: arrayUnion(uid) }); await updateDoc(oR, { followersCount: increment(1) }); 
-        await addDoc(collection(db, "notifications"), { toUid: uid, fromUsername: datosMiPerfilGlobal.username, type: 'follow', timestamp: serverTimestamp() }); 
-    }
+    if(datosMiPerfilGlobal.following?.includes(uid)) { await updateDoc(mR, { following: arrayRemove(uid) }); await updateDoc(oR, { followersCount: increment(-1) }); } 
+    else { await updateDoc(mR, { following: arrayUnion(uid) }); await updateDoc(oR, { followersCount: increment(1) }); await addDoc(collection(db, "notifications"), { toUid: uid, fromUsername: datosMiPerfilGlobal.username, type: 'follow', timestamp: serverTimestamp() }); }
 }
 
-onAuthStateChanged(auth, (user) => { 
-    if(user) { 
-        currentUser = user; 
-        mostrarMuro(); 
-        activarLecturaTiempoReal();
-        escucharLlamadasEntrantes(); 
-    } else { 
-        currentUser = null; 
-        mostrarLogin(); 
-    } 
-});
+onAuthStateChanged(auth, (user) => { if(user) { currentUser = user; mostrarMuro(); activarLecturaTiempoReal(); escucharLlamadasEntrantes(); } else { currentUser = null; mostrarLogin(); } });
 
 async function registrarUsuario(e, p, u) { 
     try { 
-        const usernameBuscado = u.replace(/\s+/g, '').toLowerCase();
-        const c = await createUserWithEmailAndPassword(auth, e, p); 
+        const usernameBuscado = u.replace(/\s+/g, '').toLowerCase(); const c = await createUserWithEmailAndPassword(auth, e, p); 
         await setDoc(doc(db, "users", c.user.uid), { uid: c.user.uid, username: usernameBuscado, followersCount: 0, following: [], blockedUsers: [], bio: "¡Hola! Acabo de unirme a plus." }); 
-        alert("¡Cuenta creada con éxito!"); 
     } catch(error) { alert("Error al registrar: " + error.message); } 
 }
-
 async function iniciarSesion(e, p) { try { await signInWithEmailAndPassword(auth, e, p); } catch(e) { alert("Error al iniciar."); } }
+
 async function cerrarSesion() { await signOut(auth); }
 
 function activarLecturaTiempoReal() {
-    desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); if(!document.getElementById('tab-buscar').classList.contains('hidden') && modoBusquedaActual==='tags') ejecutarBusquedaLocal(); });
+    desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
     
+    // TIEMPO REAL: Colección Reels activa para Plus Reels
+    desubscribirReels = onSnapshot(query(collection(db, "reels"), orderBy("timestamp", "desc")), (s) => { 
+        cacheTodosLosReels = s.docs.map(d => ({ id: d.id, ...d.data() })); 
+        dibujarReels(cacheTodosLosReels); 
+    });
+
     desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { 
-        usuariosGlobales = s.docs.map(d => d.data()); 
-        datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null;
+        usuariosGlobales = s.docs.map(d => d.data()); datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null;
         dibujarMiPerfil(); actualizarMurosYFeed(); 
-        if(!document.getElementById('tab-buscar').classList.contains('hidden') && modoBusquedaActual==='usuarios') ejecutarBusquedaLocal();
     });
     
     desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => {
-        notificacionesGlobales = s.docs.map(d => ({ id: d.id, ...d.data() }));
-        dibujarNotificaciones(notificacionesGlobales);
-        
+        notificacionesGlobales = s.docs.map(d => ({ id: d.id, ...d.data() })); dibujarNotificaciones(notificacionesGlobales);
         const lastCheckedNotif = parseInt(localStorage.getItem('lastCheckedNotif') || "0"); const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
-        const bloqueados = datosMiPerfilGlobal?.blockedUsers || [];
-        
-        const notifValidas = notificacionesGlobales.filter(n => { const remitente = usuariosGlobales.find(u => u.username === n.fromUsername); return !remitente || !bloqueados.includes(remitente.uid); });
-
-        const nuevasNotif = notifValidas.filter(n => n.type !== 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedNotif).length;
-        const badgeNotif = document.getElementById('badge-notif'); if(nuevasNotif > 0 && document.getElementById('tab-notificaciones').classList.contains('hidden')) { badgeNotif.innerText = nuevasNotif; badgeNotif.classList.remove('hidden'); } else badgeNotif.classList.add('hidden');
-        
-        const nuevosMensajes = notifValidas.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
-        const badgeMensajes = document.getElementById('badge-mensajes'); if(nuevosMensajes > 0 && document.getElementById('tab-mensajes').classList.contains('hidden') && !chatUserUidActivo) { badgeMensajes.innerText = nuevosMensajes; badgeMensajes.classList.remove('hidden'); } else badgeMensajes.classList.add('hidden');
+        const bloqueados = datosMiPerfilGlobal?.blockedUsers || []; const notifValidas = notificacionesGlobales.filter(n => { const r = usuariosGlobales.find(u => u.username === n.fromUsername); return !r || !bloqueados.includes(r.uid); });
+        const nN = notifValidas.filter(n => n.type !== 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedNotif).length;
+        const bN = document.getElementById('badge-notif'); if(nN > 0 && document.getElementById('tab-notificaciones').classList.contains('hidden')) { bN.innerText = nN; bN.classList.remove('hidden'); } else bN.classList.add('hidden');
+        const nM = notifValidas.filter(n => n.type === 'message' && n.timestamp && n.timestamp.toMillis() > lastCheckedMensajes).length;
+        const bM = document.getElementById('badge-mensajes'); if(nM > 0 && document.getElementById('tab-mensajes').classList.contains('hidden') && !chatUserUidActivo) { bM.innerText = nM; bM.classList.remove('hidden'); } else bM.classList.add('hidden');
     });
-    
     desubscribirStories = onSnapshot(query(collection(db, "stories"), orderBy("timestamp", "desc")), (s) => dibujarHistoriasBarra(s.docs.map(d => d.data())));
 }
 
 window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.ejecutarBusquedaLocal = ejecutarBusquedaLocal; window.setModoBusquedaActiva = setModoBusquedaActiva; window.buscarTagDirecto = buscarTagDirecto; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.reportarPublicacion = reportarPublicacion; window.bloquearPersona = bloquearPersona; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.eliminarMiCuenta = eliminarMiCuenta; window.iniciarLlamada = iniciarLlamada; window.responderLlamada = responderLlamada; window.finalizarLlamada = finalizarLlamada; window.toggleMic = toggleMic; window.toggleCam = toggleCam;
+window.darLikeReel = darLikeReel; window.comentarReel = comentarReel; window.eliminarReel = eliminarReel;
 
-// Detectar cuando el usuario cierra la aplicación o recarga la página bruscamente
-window.addEventListener('beforeunload', () => {
-    if (llamadaActualId) {
-        // Se intenta actualizar el documento a 'ended' para liberar a la otra persona
-        updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }).catch(() => {});
-    }
-});
+window.addEventListener('beforeunload', () => { if (llamadaActualId) updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }).catch(() => {}); });
