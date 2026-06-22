@@ -1,5 +1,9 @@
+// ==========================================
+// INICIO DEL ARCHIVO script.js
+// ==========================================
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, doc, updateDoc, arrayUnion, arrayRemove, increment, getDoc, setDoc, serverTimestamp, deleteDoc, getDocs, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, deleteUser } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -48,10 +52,10 @@ const iceServers = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stu
 function obtenerInsigniaHtml(user, isTitle = false) {
     if (!user || !user.verified) return '';
     
-    const level = user.badgeLevel || 'blue';
-    let badgeClass = 'badge-blue';
+    const level = user.badgeLevel || 'purple';
+    let badgeClass = 'badge-purple';
     
-    if (level === 'purple') badgeClass = 'badge-purple';
+    if (level === 'blue') badgeClass = 'badge-blue';
     if (level === 'gold') badgeClass = 'badge-gold';
     if (level === 'green') badgeClass = 'badge-green';
 
@@ -622,41 +626,62 @@ function activarLecturaTiempoReal() {
 const chatInputEl = document.getElementById('chat-input-text');
 if (chatInputEl) { chatInputEl.addEventListener('input', manejarInputChat); }
 
-// --- LOGICA DEL SISTEMA DE VERIFICACIÓN (PAGO Y ELECCIÓN) ---
+// --- LOGICA DEL SISTEMA DE VERIFICACIÓN OPTIMIZADA CON SELECCIÓN INICIAL ---
 async function solicitarVerificacionCuenta() {
     if (!currentUser || !datosMiPerfilGlobal) { return alert("Debes iniciar sesión primero."); }
     try {
         const userRef = doc(db, "users", currentUser.uid);
-        if (datosMiPerfilGlobal.verified === true) { return alert("Tu cuenta ya cuenta con una insignia oficial."); }
+
+        // Si ya tiene una insignia premium, evitamos que vuelva a comprar
+        if (datosMiPerfilGlobal.verified === true && ['gold', 'green', 'blue'].includes(datosMiPerfilGlobal.badgeLevel)) { 
+            return alert("Tu cuenta ya tiene una insignia VIP Premium. ¡Gracias por tu apoyo!"); 
+        }
 
         const verifiedQuery = query(collection(db, "users"), where("verified", "==", true));
-        const verifiedSnapshot = await getDocs(verifiedQuery);
-        const totalVerificados = verifiedSnapshot.size;
+        const snapshotCount = await getCountFromServer(verifiedQuery);
+        const totalVerificados = snapshotCount.data().count;
 
-        if (totalVerificados < 100) {
-            await updateDoc(userRef, { verified: true, badgeLevel: 'blue' });
-            alert(`¡Felicidades! Eres el verificado #${totalVerificados + 1}. Obtuviste tu insignia Azul oficial gratis por ser de los primeros.`);
-        } else {
-            const mensaje = "Los 100 cupos gratuitos han sido reclamados.\nLa verificación VIP cuesta $5.00 USD.\n\nElige el color de tu insignia escribiendo el número:\n1. Morado 🟣\n2. Dorado 🟡\n3. Verde 🟢";
-            const eleccion = prompt(mensaje);
+        const cuposRestantes = 100 - totalVerificados;
+        const textoMorado = cuposRestantes > 0 ? `(Gratis - ${cuposRestantes} cupos restantes)` : `(Agotado)`;
 
-            if (eleccion === "1" || eleccion === "2" || eleccion === "3") {
-                let colorElegido = 'purple';
-                let nombreColor = 'Morada';
-                
-                if (eleccion === "2") { colorElegido = 'gold'; nombreColor = 'Dorada'; }
-                if (eleccion === "3") { colorElegido = 'green'; nombreColor = 'Verde'; }
+        // Mostramos el menú para que el usuario elija su color desde el principio
+        const msj = "Elige el color de tu insignia oficial:\n\n" +
+                    "1. Morado 🟣 " + textoMorado + "\n" +
+                    "2. Dorado 🟡 (Premium - $5.00 USD)\n" +
+                    "3. Verde 🟢 (Premium - $5.00 USD)\n" +
+                    "4. Azul 🔵 (Premium - $5.00 USD)";
+        
+        const eleccion = prompt(msj);
 
-                await updateDoc(userRef, { 
-                    verified: true, 
-                    badgeLevel: colorElegido, 
-                    pagoVerificacion: "Completado ($5 USD)" 
-                });
-                
-                alert(`¡Pago procesado correctamente! Tu insignia ${nombreColor} VIP ha sido activada de por vida.`);
-            } else if (eleccion !== null) {
-                alert("Selección inválida o pago cancelado.");
+        if (eleccion === "1") {
+            // Lógica si elige Morado
+            if (datosMiPerfilGlobal.verified === true && datosMiPerfilGlobal.badgeLevel === 'purple') {
+                return alert("Ya posees la insignia Morada.");
             }
+            if (totalVerificados < 100) {
+                await updateDoc(userRef, { verified: true, badgeLevel: 'purple' });
+                alert("¡Felicidades! Obtuviste tu insignia Morada oficial gratis.");
+            } else {
+                alert("Lo sentimos, los 100 cupos gratuitos para la insignia Morada se han agotado. Puedes elegir una opción Premium.");
+            }
+        } else if (eleccion === "2" || eleccion === "3" || eleccion === "4") {
+            // Lógica si elige Premium de paga
+            let colorElegido = 'blue';
+            let nombreColor = 'Azul';
+            
+            if (eleccion === "2") { colorElegido = 'gold'; nombreColor = 'Dorada'; }
+            if (eleccion === "3") { colorElegido = 'green'; nombreColor = 'Verde'; }
+            if (eleccion === "4") { colorElegido = 'blue'; nombreColor = 'Azul'; }
+
+            await updateDoc(userRef, { 
+                verified: true, 
+                badgeLevel: colorElegido, 
+                pagoVerificacion: "Completado ($5 USD)" 
+            });
+            
+            alert(`¡Pago procesado exitosamente! Tu insignia ${nombreColor} VIP ha sido activada de por vida.`);
+        } else if (eleccion !== null) {
+            alert("Operación cancelada o selección no válida.");
         }
     } catch (error) { 
         console.error("Error:", error); 
@@ -669,3 +694,7 @@ window.abrirConfiguracion = abrirConfiguracion; window.cerrarConfiguracion = cer
 window.registrarUsuario = registrarUsuario; window.iniciarSesion = iniciarSesion; window.cerrarSesion = cerrarSesion; window.crearPublicacion = crearPublicacion; window.toggleSeguirUsuario = toggleSeguirUsuario; window.navegarA = navegarA; window.ejecutarBusquedaLocal = ejecutarBusquedaLocal; window.setModoBusquedaActiva = setModoBusquedaActiva; window.buscarTagDirecto = buscarTagDirecto; window.darLike = darLike; window.comentarPost = comentarPost; window.editarPerfil = editarPerfil; window.eliminarPost = eliminarPost; window.reportarPublicacion = reportarPublicacion; window.bloquearPersona = bloquearPersona; window.desbloquearPersona = desbloquearPersona; window.verBloqueados = verBloqueados; window.abrirChatCon = abrirChatCon; window.cerrarChatActivo = cerrarChatActivo; window.enviarMensajePrivado = enviarMensajePrivado; window.enviarFotoEnChat = enviarFotoEnChat; window.borrarMensajeChat = borrarMensajeChat; window.crearNuevaHistoria = crearNuevaHistoria; window.reproducirHistoria = reproducirHistoria; window.terminarVisorHistoria = terminarVisorHistoria; window.enviarRespuestaHistoria = enviarRespuestaHistoria; window.verPerfilUsuario = verPerfilUsuario; window.subirImagenPerfil = subirImagenPerfil; window.verSeguidores = verSeguidores; window.cerrarModalListaUI = cerrarModalListaUI; window.verSiguiendo = verSiguiendo; window.borrarComentario = borrarComentario; window.hacerRepulse = hacerRepulse; window.eliminarMiCuenta = eliminarMiCuenta; window.iniciarLlamada = iniciarLlamada; window.responderLlamada = responderLlamada; window.finalizarLlamada = finalizarLlamada; window.toggleMic = toggleMic; window.toggleCam = toggleCam; window.darLikeReel = darLikeReel; window.comentarReel = comentarReel; window.eliminarReel = eliminarReel;
 window.solicitarVerificacionCuenta = solicitarVerificacionCuenta;
 window.addEventListener('beforeunload', () => { if (llamadaActualId) updateDoc(doc(db, "calls", llamadaActualId), { status: 'ended' }).catch(() => {}); });
+
+// ==========================================
+// FIN DEL ARCHIVO script.js
+// ==========================================
