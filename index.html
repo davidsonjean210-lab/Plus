@@ -150,6 +150,27 @@
         .btn-green { background: #4ea2e6; } 
         .btn-gray { background: rgba(51, 51, 51, 0.8); backdrop-filter: blur(5px); }
         .call-header { position: absolute; top: 40px; left: 0; width: 100%; text-align: center; color: white; z-index: 1000; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+/* --- SISTEMA DE INSIGNIAS PREMIUM --- */
+.verified-badge {
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Niveles de Insignias (Brillo y Colores) */
+.badge-blue { color: #1da1f2; filter: drop-shadow(0px 0px 6px rgba(29, 161, 242, 0.6)); }
+.badge-purple { color: #9C27B0; filter: drop-shadow(0px 0px 8px rgba(156, 39, 176, 0.8)); }
+.badge-gold { color: #F1C40F; filter: drop-shadow(0px 0px 8px rgba(241, 196, 15, 0.7)); }
+.badge-green { color: #2ecc71; filter: drop-shadow(0px 0px 8px rgba(46, 204, 113, 0.8)); }
+
+/* Animación de entrada al cargar feed/perfil */
+.animate-badge { animation: popBadge 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+@keyframes popBadge {
+    0% { transform: scale(0); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}        
     </style>
 </head>
 <body>
@@ -315,8 +336,16 @@
                 </div>
                 
                 <button class="btn-plus-sec" onclick="ejecutarEditarPerfil()">✏️ Editar Biografía</button>
-                <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 15px;" onclick="ejecutarLogout()">Cerrar Sesión</button>
-                <button class="btn-plus-sec" style="color: #ff4a5a; border-color: #3e1e24; margin-top: 10px;" onclick="ejecutarEliminarCuenta()">🗑️ Eliminar Cuenta</button>
+
+                <div style="margin-top: 15px; padding: 15px; background: var(--bg-tarjeta); border-radius: 12px; border: 1px solid var(--borde-sutil);">
+                    <h4 style="margin: 0 0 5px 0; font-size: 15px; color: var(--texto-blanco); display: flex; align-items: center; gap: 6px;">
+                        <span style="color: var(--azul-pulses);">✔</span> Verificación de Cuenta
+                    </h4>
+                    <p style="margin: 0 0 12px 0; font-size: 12px; color: var(--texto-gris); line-height: 1.4;">
+                        Obtén tu insignia oficial en Plus Network. ¡Gratis para los primeros 100 usuarios! (Luego $5 USD).
+                    </p>
+                    <button class="btn-plus" style="padding: 10px; font-size: 14px; width: 100%; font-weight: bold;" onclick="ejecutarSolicitarVerificado()">Solicitar Verificado</button>
+                </div>
             </div>
 
             <div id="modal-lista-usuarios" class="story-overlay hidden" style="background: rgba(0,0,0,0.7); align-items: center; justify-content: flex-end; padding: 0; z-index: 200;">
@@ -393,6 +422,9 @@
         function colgarLlamadaWebRTC() { window.finalizarLlamada(); }
         function alternarMicrofono() { window.toggleMic(); }
         function alternarCamara() { window.toggleCam(); }
+        
+        // Ejecuta la lógica vinculada a Firebase en tu script.js
+        function ejecutarSolicitarVerificado() { window.solicitarVerificacionCuenta(); }
     </script>
     <script type="module" src="script.js"></script>
 </body>
