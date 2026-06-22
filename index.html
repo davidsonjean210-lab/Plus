@@ -150,27 +150,28 @@
         .btn-green { background: #4ea2e6; } 
         .btn-gray { background: rgba(51, 51, 51, 0.8); backdrop-filter: blur(5px); }
         .call-header { position: absolute; top: 40px; left: 0; width: 100%; text-align: center; color: white; z-index: 1000; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
-/* --- SISTEMA DE INSIGNIAS PREMIUM --- */
-.verified-badge {
-    vertical-align: middle;
-    margin-left: 4px;
-    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
 
-/* Niveles de Insignias (Brillo y Colores) */
-.badge-blue { color: #1da1f2; filter: drop-shadow(0px 0px 6px rgba(29, 161, 242, 0.6)); }
-.badge-purple { color: #9C27B0; filter: drop-shadow(0px 0px 8px rgba(156, 39, 176, 0.8)); }
-.badge-gold { color: #F1C40F; filter: drop-shadow(0px 0px 8px rgba(241, 196, 15, 0.7)); }
-.badge-green { color: #2ecc71; filter: drop-shadow(0px 0px 8px rgba(46, 204, 113, 0.8)); }
+        /* --- SISTEMA DE INSIGNIAS PREMIUM --- */
+        .verified-badge {
+            vertical-align: middle;
+            margin-left: 4px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
 
-/* Animación de entrada al cargar feed/perfil */
-.animate-badge { animation: popBadge 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        /* Niveles de Insignias (Brillo y Colores) */
+        .badge-blue { color: #1da1f2; filter: drop-shadow(0px 0px 6px rgba(29, 161, 242, 0.6)); }
+        .badge-purple { color: #9C27B0; filter: drop-shadow(0px 0px 8px rgba(156, 39, 176, 0.8)); }
+        .badge-gold { color: #F1C40F; filter: drop-shadow(0px 0px 8px rgba(241, 196, 15, 0.7)); }
+        .badge-green { color: #2ecc71; filter: drop-shadow(0px 0px 8px rgba(46, 204, 113, 0.8)); }
 
-@keyframes popBadge {
-    0% { transform: scale(0); }
-    50% { transform: scale(1.3); }
-    100% { transform: scale(1); }
-}        
+        /* Animación de entrada al cargar feed/perfil */
+        .animate-badge { animation: popBadge 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+        @keyframes popBadge {
+            0% { transform: scale(0); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }        
     </style>
 </head>
 <body>
@@ -320,8 +321,7 @@
             </div>
 
             <div id="tab-reels" class="tab-content hidden" style="padding: 0;">
-                <div class="reels-feed-container" id="reels-feed-wrapper">
-                    </div>
+                <div class="reels-feed-container" id="reels-feed-wrapper"></div>
             </div>
 
             <div id="tab-perfil" class="tab-content hidden">
