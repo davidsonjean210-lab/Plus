@@ -137,6 +137,16 @@
         .auth-box { padding: 40px 25px; }
         .auth-input { width: 100%; padding: 14px; margin-bottom: 15px; background: var(--bg-tarjeta); border: 1px solid var(--borde-sutil); border-radius: 10px; color: var(--texto-blanco); box-sizing: border-box; outline: none; font-size: 15px; transition: border 0.2s; }
         .auth-input:focus { border-color: var(--azul-pulses); }
+        #btn-olvide-pass {
+  color: #0095f6;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: center;
+  margin-top: 10px;
+}
+#btn-olvide-pass:hover {
+  text-decoration: underline;
+}
 
         /* --- LLAMADAS --- */
         .call-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 999; display: flex; flex-direction: column; }
@@ -163,6 +173,7 @@
         .badge-purple { color: #9C27B0; filter: drop-shadow(0px 0px 8px rgba(156, 39, 176, 0.8)); }
         .badge-gold { color: #F1C40F; filter: drop-shadow(0px 0px 8px rgba(241, 196, 15, 0.7)); }
         .badge-green { color: #2ecc71; filter: drop-shadow(0px 0px 8px rgba(46, 204, 113, 0.8)); }
+        .badge-black { color: #000000; filter: drop-shadow(0px 0px 8px rgba(255, 255, 255, 0.5)); }
 
         /* Animación de entrada al cargar feed/perfil */
         .animate-badge { animation: popBadge 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -171,7 +182,27 @@
             0% { transform: scale(0); }
             50% { transform: scale(1.3); }
             100% { transform: scale(1); }
-        }        
+        
+        /* --- ESTILOS DE LA INSIGNIA NEGRA VIP (CON BRILLO) --- */
+.badge-black {
+    color: #000000;
+    /* Aplicamos la animación infinita de brillo */
+    animation: brillo-vip 1.5s infinite alternate ease-in-out;
+}
+
+/* Creamos la animación del resplandor */
+@keyframes brillo-vip {
+    0% {
+        /* Estado inicial: Brillo sutil blanco */
+        filter: drop-shadow(0px 0px 2px rgba(255, 255, 255, 0.3));
+        transform: scale(1);
+    }
+    100% {
+        /* Estado final: Brillo fuerte dorado/blanco y un micro-zoom */
+        filter: drop-shadow(0px 0px 10px rgba(241, 196, 15, 0.8)) drop-shadow(0px 0px 4px rgba(255, 255, 255, 0.6));
+        transform: scale(1.05);
+    }
+}      
     </style>
 </head>
 <body>
@@ -205,6 +236,7 @@
             <input type="email" id="email" class="auth-input" placeholder="Correo electrónico">
             <input type="password" id="password" class="auth-input" placeholder="Contraseña">
             <button class="btn-plus" style="margin-top: 15px;" onclick="ejecutarLogin()">Iniciar Sesión</button>
+<p class="recuperar-texto" id="btn-olvide-pass">¿Olvidaste tu contraseña?</p>
             <button class="btn-plus-sec" onclick="ejecutarRegistro()">Crear cuenta nueva</button>
         </div>
 
@@ -336,14 +368,17 @@
                 </div>
                 
                 <button class="btn-plus-sec" onclick="ejecutarEditarPerfil()">✏️ Editar Biografía</button>
+                <button class="btn-plus-sec" onclick="solicitarPermisoNotificaciones()">
+    🔔 Activar Notificaciones
+</button>
 
                 <div style="margin-top: 15px; padding: 15px; background: var(--bg-tarjeta); border-radius: 12px; border: 1px solid var(--borde-sutil);">
                     <h4 style="margin: 0 0 5px 0; font-size: 15px; color: var(--texto-blanco); display: flex; align-items: center; gap: 6px;">
                         <span style="color: var(--azul-pulses);">✔</span> Verificación de Cuenta
                     </h4>
                     <p style="margin: 0 0 12px 0; font-size: 12px; color: var(--texto-gris); line-height: 1.4;">
-                        Obtén tu insignia oficial en Plus Network. ¡Gratis para los primeros 100 usuarios! (Luego $5 USD).
-                    </p>
+    Obtén tu insignia oficial en Plus Network. ¡Insignia Azul gratis para los primeros 100 usuarios! (Luego $10 USD por la Azul o $25 USD por la Dorada).
+</p>
                     <button class="btn-plus" style="padding: 10px; font-size: 14px; width: 100%; font-weight: bold;" onclick="ejecutarSolicitarVerificado()">Solicitar Verificado</button>
                 </div>
             </div>
@@ -427,5 +462,6 @@
         function ejecutarSolicitarVerificado() { window.solicitarVerificacionCuenta(); }
     </script>
     <script type="module" src="script.js"></script>
+    <script src="https://www.paypal.com/sdk/js?client-id=ATEF0dO1UPoC3DJnLm8dY9XTJP36n00IK5F8ZDRwUyz0PhkqV8SX6X4zy_CNKoBCCwLYUhJeJxYDokf1&currency=USD"></script>
 </body>
 </html>
