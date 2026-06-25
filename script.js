@@ -7,6 +7,7 @@ import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, where, do
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, deleteUser, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-messaging.js";
+
 const firebaseConfig = {
     apiKey: "AIzaSyDVRkOh1x2QSmn_SuuNlYEF51FNNj1oapk",
     authDomain: "plus-7bb95.firebaseapp.com",
@@ -56,12 +57,8 @@ function obtenerInsigniaHtml(user, isTitle = false) {
     if (!user || !user.verified) return '';
     const level = user.badgeLevel || 'purple';
 
-    // 👑 DISEÑO VIP BLACK (MÁS GRANDE Y ALINEADO) 👑
     if (level === 'black') {
-        // Tamaños específicos solo para la negra (más grandes)
         const sizeBlack = isTitle ? '28px' : '24px'; 
-        
-        // margin-left:2px (para acercarla) | top:-2px (para alinearla perfecto a la altura del nombre)
         return `
         <svg class="verified-badge badge-black animate-badge" style="width:${sizeBlack}; height:${sizeBlack}; display:inline-block; vertical-align:middle; position:relative; top:-2px; margin-left:2px;" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" title="Insignia BLACK VIP">
             <g transform="translate(4, 6)">
@@ -77,8 +74,7 @@ function obtenerInsigniaHtml(user, isTitle = false) {
         </svg>`;
     }
 
-    // --- DISEÑO ORIGINAL PARA LAS DEMÁS (Azul, Dorada, etc.) ---
-    const sizeOriginal = isTitle ? '20px' : '15px'; // Tamaños originales más pequeños
+    const sizeOriginal = isTitle ? '20px' : '15px'; 
     let badgeClass = `badge-${level}`;
     
     return `
@@ -715,7 +711,15 @@ async function eliminarMiCuenta() { if (!currentUser) return; if (confirm("¿Eli
 function activarLecturaTiempoReal() {
     desubscribirPosts = onSnapshot(query(collection(db, "posts"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosPosts = s.docs.map(d => ({ id: d.id, ...d.data() })); actualizarMurosYFeed(); });
     desubscribirReels = onSnapshot(query(collection(db, "reels"), orderBy("timestamp", "desc")), (s) => { cacheTodosLosReels = s.docs.map(d => ({ id: d.id, ...d.data() })); dibujarReels(cacheTodosLosReels); });
-    desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { usuariosGlobales = s.docs.map(d => d.data()); datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null; dibujarMiPerfil(); actualizarMurosYFeed(); });
+    
+    // Este oyente es el encargado de que todo el apartado del perfil se actualice de inmediato
+    desubscribirUsuarios = onSnapshot(collection(db, "users"), (s) => { 
+        usuariosGlobales = s.docs.map(d => d.data()); 
+        datosMiPerfilGlobal = usuariosGlobales.find(u => u.uid === currentUser.uid) || null; 
+        dibujarMiPerfil(); 
+        actualizarMurosYFeed(); 
+    });
+    
     desubscribirNotif = onSnapshot(query(collection(db, "notifications"), where("toUid", "==", currentUser.uid)), (s) => {
         notificacionesGlobales = s.docs.map(d => ({ id: d.id, ...d.data() })); dibujarNotificaciones(notificacionesGlobales);
         const lastCheckedNotif = parseInt(localStorage.getItem('lastCheckedNotif') || "0"); const lastCheckedMensajes = parseInt(localStorage.getItem('lastCheckedMensajes') || "0");
@@ -765,24 +769,22 @@ async function solicitarVerificacionCuenta() {
                 
                 <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px;" id="badge-selector-container">
                     <label style="background:#1c273a; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; border:1px solid rgba(255,255,255,0.05);">
-    <span><input type="radio" name="badge-opt" value="blue_free" checked> Insignia Azul 🔵 <small style="color:#8899a6; margin-left:5px;">(${textoMorado})</small></span>
-    <span style="font-size:13px; color:#4ea2e6; font-weight:bold;">Gratis</span>
-</label>
+                        <span><input type="radio" name="badge-opt" value="blue_free" checked> Insignia Azul 🔵 <small style="color:#8899a6; margin-left:5px;">(${textoMorado})</small></span>
+                        <span style="font-size:13px; color:#4ea2e6; font-weight:bold;">Gratis</span>
+                    </label>
 
-<label style="background:#1c273a; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; border:1px solid rgba(255,255,255,0.05);">
-    <span><input type="radio" name="badge-opt" value="blue"> Insignia Azul 🔵 <small style="color:#8899a6; margin-left:5px;">VIP Premium</small></span>
-    <span style="font-size:13px; color:#4ea2e6; font-weight:bold;">$10.00 USD</span>
-</label>
+                    <label style="background:#1c273a; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; border:1px solid rgba(255,255,255,0.05);">
+                        <span><input type="radio" name="badge-opt" value="blue"> Insignia Azul 🔵 <small style="color:#8899a6; margin-left:5px;">VIP Premium</small></span>
+                        <span style="font-size:13px; color:#4ea2e6; font-weight:bold;">$10.00 USD</span>
+                    </label>
 
-<label style="background:#1c273a; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; border:1px solid rgba(255,255,255,0.05);">
-    <span><input type="radio" name="badge-opt" value="gold"> Insignia Dorada 🟡 <small style="color:#8899a6; margin-left:5px;">VIP Premium</small></span>
-    <span style="font-size:13px; color:#ffb300; font-weight:bold;">$25.00 USD</span>
-</label>
-
+                    <label style="background:#1c273a; padding:12px; border-radius:10px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; border:1px solid rgba(255,255,255,0.05);">
+                        <span><input type="radio" name="badge-opt" value="gold"> Insignia Dorada 🟡 <small style="color:#8899a6; margin-left:5px;">VIP Premium</small></span>
+                        <span style="font-size:13px; color:#ffb300; font-weight:bold;">$25.00 USD</span>
+                    </label>
                 </div>
                 
-                <div id="paypal-button-render-zone" style="margin-top:15px; min-height: 45px;">
-                    </div>
+                <div id="paypal-button-render-zone" style="margin-top:15px; min-height: 45px;"></div>
             </div>
         `;
         document.body.appendChild(modal);
@@ -795,37 +797,30 @@ async function solicitarVerificacionCuenta() {
             const seleccion = modal.querySelector('input[name="badge-opt"]:checked').value;
             
             if (seleccion === 'blue_free' || seleccion === 'black') {
-        renderZone.innerHTML = `<button class="btn-plus" id="btn-procesar-gratis" style="background:#fff; color:#090e17; font-weight:bold; border-radius:25px; padding:12px; width:100%; border:none; cursor:pointer;">Activar Insignia Gratis</button>`;
+                renderZone.innerHTML = `<button class="btn-plus" id="btn-procesar-gratis" style="background:#fff; color:#090e17; font-weight:bold; border-radius:25px; padding:12px; width:100%; border:none; cursor:pointer;">Activar Insignia Gratis</button>`;
 
-        modal.querySelector('#btn-procesar-gratis').onclick = async () => {
-            
-            // --- 1. LÓGICA SI ELIGE LA NEGRA VIP ---
-            if (seleccion === 'black') {
-                await updateDoc(doc(db, "users", currentUser.uid), { verified: true, badgeLevel: 'black' });
-                alert("¡Felicidades! Obtuviste tu insignia negra VIP oficial.");
-                modal.remove();
-            } 
-            
-            // --- 2. LÓGICA ORIGINAL SI ELIGE LA AZUL GRATIS ---
-            else {
-                if (datosMiPerfilGlobal.verified === true && datosMiPerfilGlobal.badgeLevel === 'blue') {
-                    return alert("Ya posees la insignia azul.");
-                }
-                if (totalVerificados < 100) {
-                    await updateDoc(doc(db, "users", currentUser.uid), { verified: true, badgeLevel: 'blue' });
-                    alert("¡Felicidades! Obtuviste tu insignia azul oficial gratis.");
-                    modal.remove();
-                } else {
-                    alert("Lo sentimos, los 100 cupos gratuitos para la insignia azul se han agotado. Puedes elegir una opción Premium.");
-                }
-            }
-        };
+                modal.querySelector('#btn-procesar-gratis').onclick = async () => {
+                    if (seleccion === 'black') {
+                        await updateDoc(doc(db, "users", currentUser.uid), { verified: true, badgeLevel: 'black' });
+                        alert("¡Felicidades! Obtuviste tu insignia negra VIP oficial.");
+                        modal.remove();
+                    } else {
+                        if (datosMiPerfilGlobal.verified === true && datosMiPerfilGlobal.badgeLevel === 'blue') {
+                            return alert("Ya posees la insignia azul.");
+                        }
+                        if (totalVerificados < 100) {
+                            await updateDoc(doc(db, "users", currentUser.uid), { verified: true, badgeLevel: 'blue' });
+                            alert("¡Felicidades! Obtuviste tu insignia azul oficial gratis.");
+                            modal.remove();
+                        } else {
+                            alert("Lo sentimos, los 100 cupos gratuitos para la insignia azul se han agotado. Puedes elegir una opción Premium.");
+                        }
+                    }
+                };
             } else {
                 renderZone.innerHTML = `<div id="paypal-smart-button-container"></div>`;
-                // Cargar dinámicamente el SDK de PayPal si no está cargado en la cabecera HTML
                 if (!window.paypal) {
                     const script = document.createElement('script');
-                    // NOTA: Reemplaza client-id=test por tu Client ID real de PayPal (Sandbox o Live)
                     script.src = "https://www.paypal.com/sdk/js?client-id=test&currency=USD"; 
                     script.onload = () => inicializarPaypalButtons(seleccion);
                     document.head.appendChild(script);
@@ -836,69 +831,54 @@ async function solicitarVerificacionCuenta() {
         };
 
         radios.forEach(r => r.addEventListener('change', actualizarZonaPago));
-        // Ejecutar inicialización de vista inicial por defecto
         actualizarZonaPago();
 
-// Función encargada de instanciar la pasarela delegando la seguridad al servidor
-function inicializarPaypalButtons(colorElegido) {
-    if (!window.paypal || !document.getElementById('paypal-smart-button-container')) return;
-    document.getElementById('paypal-smart-button-container').innerHTML = '';
-    
-    window.paypal.Buttons({
-        style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'paypal' },
-        
-        createOrder: function(data, actions) {
-            return actions.order.create({
-                purchase_units: [{
-                    description: `Insignia VIP Premium Oficial [${colorElegido.toUpperCase()}]`,
-                    amount: { 
-    currency_code: "USD", 
-    value: colorElegido === 'gold' ? "25.00" : "10.00" 
-}
-                }]
-            });
-        },
-        
-        onApprove: async function(data, actions) {
-            // EL CAMBIO ESTÁ AQUÍ: En lugar de guardar en Firebase, llamamos a tu servidor Render
-            const btnProcesando = document.getElementById('paypal-smart-button-container');
-            btnProcesando.innerHTML = '<p style="text-align:center; color:#4ea2e6;">Verificando pago de forma segura...</p>';
+        function inicializarPaypalButtons(colorElegido) {
+            if (!window.paypal || !document.getElementById('paypal-smart-button-container')) return;
+            document.getElementById('paypal-smart-button-container').innerHTML = '';
+            
+            window.paypal.Buttons({
+                style: { layout: 'vertical', color: 'blue', shape: 'pill', label: 'paypal' },
+                createOrder: function(data, actions) {
+                    return actions.order.create({
+                        purchase_units: [{
+                            description: `Insignia VIP Premium Oficial [${colorElegido.toUpperCase()}]`,
+                            amount: { currency_code: "USD", value: colorElegido === 'gold' ? "25.00" : "10.00" }
+                        }]
+                    });
+                },
+                onApprove: async function(data, actions) {
+                    const btnProcesando = document.getElementById('paypal-smart-button-container');
+                    btnProcesando.innerHTML = '<p style="text-align:center; color:#4ea2e6;">Verificando pago de forma segura...</p>';
 
-            try {
-                // Petición a tu servidor seguro en Render
-                const response = await fetch('https://servidor-2-lnvw.onrender.com/verify-payment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        orderID: data.orderID,          // El ID de la orden que dio PayPal
-                        uid: currentUser.uid,           // A quién le daremos la insignia
-                        badgeLevel: colorElegido        // Qué color compró
-                    })
-                });
+                    try {
+                        const response = await fetch('https://servidor-2-lnvw.onrender.com/verify-payment', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ orderID: data.orderID, uid: currentUser.uid, badgeLevel: colorElegido })
+                        });
 
-                const result = await response.json();
+                        const result = await response.json();
 
-                if (response.ok && result.success) {
-                    alert(`¡Pago verificado y asegurado! Tu insignia ${colorElegido.toUpperCase()} VIP está activa.`);
-                    document.getElementById('modal-paypal-verificacion').remove();
-                } else {
-                    alert("El servidor rechazó la verificación del pago: " + (result.error || "Error desconocido."));
-                    inicializarPaypalButtons(colorElegido); // Restaurar botones si falla
+                        if (response.ok && result.success) {
+                            alert(`¡Pago verificado y asegurado! Tu insignia ${colorElegido.toUpperCase()} VIP está activa.`);
+                            document.getElementById('modal-paypal-verificacion').remove();
+                        } else {
+                            alert("El servidor rechazó la verificación del pago: " + (result.error || "Error desconocido."));
+                            inicializarPaypalButtons(colorElegido); 
+                        }
+                    } catch(err) {
+                        console.error("Error contactando al servidor Render:", err);
+                        alert("No se pudo contactar con el servidor de seguridad. Si se cobró, contacta soporte.");
+                        inicializarPaypalButtons(colorElegido);
+                    }
+                },
+                onError: function(err) {
+                    console.error("PayPal Error:", err);
+                    alert("La transacción fue declinada o hubo un error con la pasarela.");
                 }
-            } catch(err) {
-                console.error("Error contactando al servidor Render:", err);
-                alert("No se pudo contactar con el servidor de seguridad. Si se cobró, contacta soporte.");
-                inicializarPaypalButtons(colorElegido);
-            }
-        },
-        
-        onError: function(err) {
-            console.error("PayPal Error:", err);
-            alert("La transacción fue declinada o hubo un error con la pasarela.");
+            }).render('#paypal-smart-button-container');
         }
-    }).render('#paypal-smart-button-container');
-}
-
     } catch (error) { 
         console.error("Error general:", error); 
         alert("Hubo un problema al procesar tu solicitud."); 
@@ -909,11 +889,9 @@ function inicializarPaypalButtons(colorElegido) {
 // 🛡️ LÓGICA DEL PANEL DE ADMINISTRADOR OCULTO
 // ==========================================================================
 function inicializarPanelAdmin(user) {
-    // CAMBIA AQUÍ EL CORREO DEL ADMINISTRADOR
     const ADMIN_EMAIL = "davidsonjean210@gmail.com"; 
 
     if (user && user.email === ADMIN_EMAIL) {
-        // Inyectar el botón en la barra de navegación si no existe
         if (!document.getElementById('btn-admin-hidden')) {
             const nav = document.querySelector('.bottom-nav');
             if (nav) {
@@ -976,7 +954,8 @@ async function adminBloquearUsuario() {
         }
     }
 }
- // Función para solicitar permiso y guardar token FCM
+
+// Función para solicitar permiso y guardar token FCM
 window.solicitarPermisoNotificaciones = async function() {
     if (!currentUser) {
         alert("Debes iniciar sesión para activar las notificaciones.");
@@ -984,21 +963,16 @@ window.solicitarPermisoNotificaciones = async function() {
     }
 
     try {
-        // Solicitar permiso al usuario
         const permiso = await Notification.requestPermission();
         
         if (permiso === "granted") {
-            // Obtener el token. RECUERDA: Debes tener tu VAPID Key generada en Firebase Cloud Messaging
             const tokenActual = await getToken(messaging, { 
                 vapidKey: 'BMu2b5OZyIpOD0d-ISq0PTuX1tdQZON8EDBtQ_oXfjAi8i5FWoAtS9WMNMq7kjz8JQVXkNIw_rGTfTZEnqLyZKE' 
             });
             
             if (tokenActual) {
-                // Guardar en Firestore
                 const usuarioRef = doc(db, "users", currentUser.uid);
-                await updateDoc(usuarioRef, {
-                    fcmToken: tokenActual
-                });
+                await updateDoc(usuarioRef, { fcmToken: tokenActual });
                 console.log("Token FCM guardado correctamente.");
                 alert("¡Notificaciones activadas! 🔔");
             }
